@@ -1,0 +1,18 @@
+-- PostgreSQL AGE GraphStore Schema
+-- Each workspace maps to a separate AGE graph named: ws_<workspace_id>
+--
+-- AGE graphs are created dynamically via:
+--   SELECT * FROM ag_catalog.create_graph('ws_<workspace_id>');
+--
+-- Labels are created lazily when the first node with that label is created.
+-- The provider uses MERGE/CREATE to establish labels as needed.
+--
+-- Node Labels:
+--   - umodel_node: UModel elements (kind, domain, name, version, spec)
+--   - entity: Entities (entity_key, domain, entity_type, entity_id, method, timestamps, properties)
+--
+-- Edge Labels:
+--   - topo: Relations between entities (relation_key, relation_type, method, timestamps, properties)
+--
+-- Properties are stored as agtype (AGE's JSONB-like format).
+-- The properties field contains the full entity/relation payload as JSON.
