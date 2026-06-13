@@ -87,7 +87,7 @@ func NewAppWithGraphStore(dataRoot string, config graphstore.ProviderConfig) (*A
 	}
 	searchSvc := search.NewService(searchProvider, nil, search.ProviderTypeMemory)
 	umodelSvc := umodel.NewService(graph, umodel.WithSearchIndexer(searchSvc))
-	entitySvc := entitystore.NewService(graph, umodelSvc, entitystore.WithSearchIndexer(searchSvc))
+	entitySvc := entitystore.NewService(graph, umodelSvc, entitystore.WithSearchIndexer(searchSvc), entitystore.WithUModelStore(graph))
 	sampleSvc := sampledata.NewService(umodelSvc, entitySvc)
 	querySvc := query.NewServiceWithSearch(graph, searchSvc)
 	agentSvc := agentgateway.NewService(querySvc, agentgateway.WithWriteServices(umodelSvc, entitySvc))
@@ -520,6 +520,28 @@ func (a *App) handleEntityStore(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		result, err := a.EntityStore.ExpireRelations(r.Context(), workspaceID, req)
+		if err != nil {
+			writeError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, result)
+	case "data_links:write":
+		var req entitystore.DataLinkWriteRequest
+		if !decodeJSON(w, r, &req) {
+			return
+		}
+		result, err := a.EntityStore.WriteDataLinks(r.Context(), workspaceID, req)
+		if err != nil {
+			writeError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, result)
+	case "data_links:get":
+		var req entitystore.DataLinkQueryRequest
+		if !decodeJSON(w, r, &req) {
+			return
+		}
+		result, err := a.EntityStore.GetDataLinks(r.Context(), workspaceID, req)
 		if err != nil {
 			writeError(w, err)
 			return

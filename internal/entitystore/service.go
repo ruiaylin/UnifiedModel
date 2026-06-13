@@ -18,6 +18,11 @@ type graphStore interface {
 	WriteRelations(ctx context.Context, batch model.RelationWriteBatch) (model.WriteResult, error)
 }
 
+type umodelStore interface {
+	PutUModelElements(ctx context.Context, batch model.UModelElementBatch) (model.WriteResult, error)
+	GetUModelSnapshot(ctx context.Context, req model.UModelSnapshotRequest) (model.UModelSnapshot, error)
+}
+
 type schemaResolver interface {
 	ValidateEntityPayload(ctx context.Context, payload model.EntityPayload) (model.ValidationResult, error)
 	ValidateRelationPayload(ctx context.Context, payload model.RelationPayload) (model.ValidationResult, error)
@@ -34,14 +39,20 @@ func WithSearchIndexer(indexer searchIndexer) Option {
 	return func(s *Service) { s.search = indexer }
 }
 
+func WithUModelStore(store umodelStore) Option {
+	return func(s *Service) { s.umodel = store }
+}
+
 type Service struct {
 	graph    graphStore
 	resolver schemaResolver
 	search   searchIndexer
+	umodel   umodelStore
 
 	mu                  sync.Mutex
 	entityIdempotency   map[string]model.WriteResult
 	relationIdempotency map[string]model.WriteResult
+	datalinkIdempotency map[string]DataLinkWriteResponse
 }
 
 func NewService(graph graphStore, resolver schemaResolver, opts ...Option) *Service {
@@ -50,6 +61,7 @@ func NewService(graph graphStore, resolver schemaResolver, opts ...Option) *Serv
 		resolver:            resolver,
 		entityIdempotency:   make(map[string]model.WriteResult),
 		relationIdempotency: make(map[string]model.WriteResult),
+		datalinkIdempotency: make(map[string]DataLinkWriteResponse),
 	}
 	for _, opt := range opts {
 		opt(s)
