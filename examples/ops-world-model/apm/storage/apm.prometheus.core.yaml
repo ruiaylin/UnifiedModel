@@ -1,0 +1,28 @@
+kind: prometheus
+schema:
+  url: "umodel.aliyun.com"
+  version: "v1.0.0"
+metadata:
+  name: "apm.prometheus.core"
+  domain: apm
+  display_name:
+    en_us: "APM Prometheus"
+    zh_cn: "APM Prometheus"
+  description:
+    en_us: "Prometheus-compatible metrics endpoint for APM service metrics."
+    zh_cn: "APM 服务指标使用的 Prometheus 兼容指标端点。"
+spec:
+  endpoint: "http://prometheus.ops-world.example:9090"
+  api_prefix: "/api/v1"
+  default_query_type: range
+  default_step: 1m
+  lookback_delta: 5m
+  tenant: ops-world-model
+  tenant_header: "X-Scope-OrgID"
+  tls_verify: true
+  external_labels:
+    workspace: ops-world-model
+    domain: apm
+  tags:
+    sample: ops-world-model
+    role: metrics

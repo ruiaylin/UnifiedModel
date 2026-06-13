@@ -1,0 +1,38 @@
+kind: entity_set
+schema:
+  url: "umodel.aliyun.com"
+  version: "v0.1.0"
+metadata:
+  name: "code.repo"
+  domain: code
+  display_name:
+    en_us: "Code Repository"
+    zh_cn: "代码仓库"
+  description:
+    en_us: "A source code repository in the code domain."
+    zh_cn: "代码域中的源代码仓库。"
+spec:
+  fields:
+    - name: id
+      type: string
+      display_name: { en_us: "ID", zh_cn: "ID" }
+    - name: display_name
+      type: string
+      display_name: { en_us: "Name", zh_cn: "名称" }
+    - name: url
+      type: string
+      display_name: { en_us: "URL", zh_cn: "仓库地址" }
+    - name: language
+      type: string
+      display_name: { en_us: "Language", zh_cn: "语言" }
+    - name: owner
+      type: string
+      display_name: { en_us: "Owner", zh_cn: "负责人" }
+  primary_key_fields:
+    - id
+  id_generator: "id"
+  name_fields:
+    - display_name
+  ordered_fields: ["id", "display_name", "url", "language", "owner"]
+  first_observed_time_field: "__first_observed_time__"
+  last_observed_time_field: "__last_observed_time__"
