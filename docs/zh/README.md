@@ -45,6 +45,8 @@ English: [UModel Documentation](../en/README.md)
 ## 架构
 
 - [架构总览](architecture/overview.md) - 系统视图、分层、公共契约和 guardrails。
+- [运维领域知识图谱本体与元模型设计](architecture/operations-world-model-ontology.md) - L1 拓扑、L2 监控、L3 代码图谱的实体、关系、命名空间和 SPL 示例。
+- [运维世界模型技术底座架构](architecture/operations-world-model-foundation.md) - UModel、GitNexus、PG+AGE、DataLink、桥边和跨 repo 联邦的边界。
 - [运行时流程](architecture/runtime-flow.md) - 启动、导入、写入、查询、Agent 和持久化流程。
 - [Query 与 Agent 架构](architecture/query-and-agent.md) - Query Service 与 AgentGateway 边界。
 - [扩展点](architecture/extension-points.md) - 模型包、Schema、Provider、Query、API、SDK 和 UI 扩展。
