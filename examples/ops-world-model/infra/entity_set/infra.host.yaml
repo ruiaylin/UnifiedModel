@@ -1,0 +1,50 @@
+kind: entity_set
+schema:
+  url: "umodel.aliyun.com"
+  version: "v0.1.0"
+metadata:
+  name: "infra.host"
+  domain: infra
+  display_name:
+    en_us: "Host"
+    zh_cn: "主机"
+  description:
+    en_us: "A physical or virtual machine in the infrastructure."
+    zh_cn: "基础设施中的物理机或虚拟机。"
+spec:
+  fields:
+    - name: id
+      type: string
+      display_name: { en_us: "ID", zh_cn: "ID" }
+    - name: display_name
+      type: string
+      display_name: { en_us: "Name", zh_cn: "名称" }
+    - name: ip_address
+      type: string
+      display_name: { en_us: "IP Address", zh_cn: "IP 地址" }
+    - name: cpu_cores
+      type: integer
+      display_name: { en_us: "CPU Cores", zh_cn: "CPU 核数" }
+    - name: memory_gb
+      type: float
+      display_name: { en_us: "Memory (GB)", zh_cn: "内存 (GB)" }
+    - name: os_type
+      type: string
+      display_name: { en_us: "OS Type", zh_cn: "操作系统" }
+    - name: datacenter
+      type: string
+      display_name: { en_us: "Datacenter", zh_cn: "数据中心" }
+    - name: status
+      type: string
+      display_name: { en_us: "Status", zh_cn: "状态" }
+    - name: environment
+      type: string
+      display_name: { en_us: "Environment", zh_cn: "环境" }
+  primary_key_fields:
+    - id
+  id_generator: "id"
+  name_fields:
+    - display_name
+  ordered_fields: ["id", "display_name", "ip_address", "cpu_cores", "memory_gb", "status", "environment"]
+  first_observed_time_field: "__first_observed_time__"
+  last_observed_time_field: "__last_observed_time__"

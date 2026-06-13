@@ -1,0 +1,23 @@
+kind: entity_set_link
+schema:
+  url: "umodel.aliyun.com"
+  version: "v0.1.0"
+metadata:
+  name: "apm.service_runs_on_infra.host"
+  domain: apm
+  display_name:
+    en_us: "Service runs on Host"
+    zh_cn: "服务运行在主机上"
+  description:
+    en_us: "A service runs on an infrastructure host."
+    zh_cn: "服务运行在基础设施主机上。"
+spec:
+  src:
+    domain: apm
+    kind: entity_set
+    name: apm.service
+  dest:
+    domain: infra
+    kind: entity_set
+    name: infra.host
+  entity_link_type: runs_on

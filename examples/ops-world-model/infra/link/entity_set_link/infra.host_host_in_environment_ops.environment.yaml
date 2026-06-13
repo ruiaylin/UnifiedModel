@@ -1,0 +1,23 @@
+kind: entity_set_link
+schema:
+  url: "umodel.aliyun.com"
+  version: "v0.1.0"
+metadata:
+  name: "infra.host_host_in_environment_ops.environment"
+  domain: infra
+  display_name:
+    en_us: "Host in Environment"
+    zh_cn: "主机位于环境中"
+  description:
+    en_us: "A host is located in an operations environment. Enables 3-hop traversal: service -> host -> environment."
+    zh_cn: "主机位于运维环境中。支持三跳遍历：服务 -> 主机 -> 环境。"
+spec:
+  src:
+    domain: infra
+    kind: entity_set
+    name: infra.host
+  dest:
+    domain: ops
+    kind: entity_set
+    name: ops.environment
+  entity_link_type: host_in_environment

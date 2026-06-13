@@ -17,6 +17,7 @@ import (
 
 const (
 	MultiDomainQuickStartSample = "multi-domain-quickstart"
+	OpsWorldModelSample         = "ops-world-model"
 )
 
 type sampleDefinition struct {
@@ -41,6 +42,13 @@ var sampleCatalog = []sampleDefinition{
 		SchemaRoot:   "examples/incident-investigation",
 		EntityFile:   "examples/incident-investigation/sample-data/entities.json",
 		RelationFile: "examples/incident-investigation/sample-data/relations.json",
+	},
+	{
+		Name:         "ops-world-model",
+		Aliases:      []string{"ops-world", "examples/ops-world-model"},
+		SchemaRoot:   "examples/ops-world-model",
+		EntityFile:   "examples/ops-world-model/sample-data/entities.json",
+		RelationFile: "examples/ops-world-model/sample-data/relations.json",
 	},
 }
 
