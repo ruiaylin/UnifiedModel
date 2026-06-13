@@ -230,10 +230,32 @@ func (s *Service) WriteDataLinks(ctx context.Context, workspace string, req Data
 					}
 				}
 			}
+			// Validate value side: dest field must exist in dest dataset's fields/labels.
+			if destName != "" {
+				destKey := model.UModelElementRefKey(destDomain, destName, destKind)
+				if destElem, found := elementsByName[destKey]; found {
+					for _, destField := range fieldsMapping {
+						if destFieldName, ok := destField.(string); ok {
+							if !fieldExistsInSpec(destElem.Spec, destFieldName) {
+								warnings = append(warnings, model.ErrorDetail{
+									Field:  fmt.Sprintf("data_links[%d].fields_mapping", i),
+									Reason: fmt.Sprintf("dest field '%s' not found in %s '%s' (warning)", destFieldName, destKind, destKey),
+								})
+							}
+						}
+					}
+				}
+			}
 		}
 
 		validElements = append(validElements, dl)
-		results[i].Status = "created"
+		// Determine if this is a create or update by checking existing elements.
+		elemKey := model.UModelElementKey(dl)
+		if _, exists := elementsByName[elemKey]; exists {
+			results[i].Status = "updated"
+		} else {
+			results[i].Status = "created"
+		}
 	}
 
 	// Write valid elements to GraphStore via PutUModelElements.
@@ -247,10 +269,22 @@ func (s *Service) WriteDataLinks(ctx context.Context, workspace string, req Data
 		}
 	}
 
+	// Determine partial success: some results succeeded and some errored.
+	var hasSuccess, hasError bool
+	for _, r := range results {
+		switch r.Status {
+		case "created", "updated":
+			hasSuccess = true
+		case "error":
+			hasError = true
+		}
+	}
+
 	response := DataLinkWriteResponse{
-		Status:   "ok",
-		Results:  results,
-		Warnings: warnings,
+		Status:         "ok",
+		PartialSuccess: hasSuccess && hasError,
+		Results:        results,
+		Warnings:       warnings,
 	}
 
 	// Cache idempotency result.
@@ -420,10 +454,16 @@ func resolveLinkedStorage(elements map[string]model.UModelElement, destDomain, d
 		if dest == nil {
 			continue
 		}
+		destKind, _ := dest["kind"].(string)
+		destDomain, _ := dest["domain"].(string)
+		destName, _ := dest["name"].(string)
+		if destKind == "" || destDomain == "" || destName == "" {
+			continue
+		}
 		storage := &StorageSummary{
-			Kind:   dest["kind"].(string),
-			Domain: dest["domain"].(string),
-			Name:   dest["name"].(string),
+			Kind:   destKind,
+			Domain: destDomain,
+			Name:   destName,
 		}
 		if endpoint, ok := elem.Spec["endpoint"].(string); ok {
 			storage.Endpoint = endpoint

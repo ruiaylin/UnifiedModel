@@ -445,3 +445,188 @@ func TestGetDataLinksLinkedStorage(t *testing.T) {
 		t.Fatalf("unexpected linked storage: %+v", linked)
 	}
 }
+
+func TestResolveLinkedStorageNoPanicOnMissingFields(t *testing.T) {
+	// AC-FIX-001: resolveLinkedStorage must not panic when dest map has missing fields.
+	ctx := context.Background()
+	svc, graph := newTestServiceWithUModel()
+	ws := "demo"
+
+	seedEntitySet(t, graph, ws, "apm", "apm.service")
+	seedMetricSet(t, graph, ws, "apm", "apm.metric.service")
+
+	// Seed a storage_link with missing dest fields (nil values).
+	_, err := graph.PutUModelElements(ctx, model.UModelElementBatch{
+		Workspace: ws,
+		Elements: []model.UModelElement{{
+			Kind:   "storage_link",
+			Domain: "apm",
+			Name:   "bad_storage_link",
+			Spec: map[string]any{
+				"src":  map[string]any{"domain": "apm", "kind": "metric_set", "name": "apm.metric.service"},
+				"dest": map[string]any{"domain": "apm"}, // missing kind and name
+			},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	dl := dataLinkInput("apm", "apm.service_related_to_apm.metric.service",
+		"apm", "apm.service", "apm", "apm.metric.service", "metric_set")
+	_, err = svc.WriteDataLinks(ctx, ws, DataLinkWriteRequest{DataLinks: []DataLinkInput{dl}})
+	if err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	// Query must not panic even with malformed storage_link.
+	resp, err := svc.GetDataLinks(ctx, ws, DataLinkQueryRequest{})
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if resp.Total != 1 {
+		t.Fatalf("expected 1, got %d", resp.Total)
+	}
+	// LinkedStorage should be nil since the storage_link dest is malformed.
+	if resp.DataLinks[0].LinkedStorage != nil {
+		t.Fatalf("expected nil linked storage for malformed dest, got %+v", resp.DataLinks[0].LinkedStorage)
+	}
+}
+
+func TestWriteDataLinksPartialSuccess(t *testing.T) {
+	// AC-FIX-002: PartialSuccess must be true when some succeed and some fail.
+	ctx := context.Background()
+	svc, graph := newTestServiceWithUModel()
+	ws := "demo"
+
+	seedEntitySet(t, graph, ws, "apm", "apm.service")
+	seedMetricSet(t, graph, ws, "apm", "apm.metric.service")
+
+	good := dataLinkInput("apm", "apm.good_link",
+		"apm", "apm.service", "apm", "apm.metric.service", "metric_set")
+	bad := DataLinkInput{
+		Kind: "data_link",
+		Metadata: struct {
+			Name   string `json:"name"`
+			Domain string `json:"domain"`
+		}{Name: "apm.bad_link", Domain: "apm"},
+		Spec: map[string]any{
+			"src":  map[string]any{"domain": "apm", "kind": "host", "name": "apm.host"},
+			"dest": map[string]any{"domain": "apm", "kind": "metric_set", "name": "apm.metric.service"},
+		},
+	}
+
+	resp, err := svc.WriteDataLinks(ctx, ws, DataLinkWriteRequest{
+		DataLinks: []DataLinkInput{good, bad},
+	})
+	if err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if !resp.PartialSuccess {
+		t.Fatalf("expected partial_success=true, got false; results: %+v", resp.Results)
+	}
+	// Verify the good one succeeded and the bad one errored.
+	if resp.Results[0].Status != "created" {
+		t.Fatalf("expected first result 'created', got %s", resp.Results[0].Status)
+	}
+	if resp.Results[1].Status != "error" {
+		t.Fatalf("expected second result 'error', got %s", resp.Results[1].Status)
+	}
+}
+
+func TestWriteDataLinksUpdatedStatus(t *testing.T) {
+	// AC-FIX-003: Second write of same element should show "updated" status.
+	ctx := context.Background()
+	svc, graph := newTestServiceWithUModel()
+	ws := "demo"
+
+	seedEntitySet(t, graph, ws, "apm", "apm.service")
+	seedMetricSet(t, graph, ws, "apm", "apm.metric.service")
+
+	dl := dataLinkInput("apm", "apm.service_related_to_apm.metric.service",
+		"apm", "apm.service", "apm", "apm.metric.service", "metric_set")
+
+	// First write — should be "created".
+	first, err := svc.WriteDataLinks(ctx, ws, DataLinkWriteRequest{DataLinks: []DataLinkInput{dl}})
+	if err != nil {
+		t.Fatalf("first write: %v", err)
+	}
+	if first.Results[0].Status != "created" {
+		t.Fatalf("expected 'created', got %s", first.Results[0].Status)
+	}
+
+	// Second write (new idempotency key) — should be "updated".
+	dl2 := dataLinkInput("apm", "apm.service_related_to_apm.metric.service",
+		"apm", "apm.service", "apm", "apm.metric.service", "metric_set")
+	second, err := svc.WriteDataLinks(ctx, ws, DataLinkWriteRequest{
+		DataLinks:      []DataLinkInput{dl2},
+		IdempotencyKey: "different-key",
+	})
+	if err != nil {
+		t.Fatalf("second write: %v", err)
+	}
+	if second.Results[0].Status != "updated" {
+		t.Fatalf("expected 'updated', got %s", second.Results[0].Status)
+	}
+}
+
+func TestWriteDataLinksWarningForDestFieldValue(t *testing.T) {
+	// AC-FIX-004: fields_mapping value side validation — warn if dest field not found.
+	ctx := context.Background()
+	svc, graph := newTestServiceWithUModel()
+	ws := "demo"
+
+	seedEntitySet(t, graph, ws, "apm", "apm.service")
+
+	// Seed a metric_set with only "service_id" label, missing "environment".
+	_, err := graph.PutUModelElements(ctx, model.UModelElementBatch{
+		Workspace: ws,
+		Elements: []model.UModelElement{{
+			Kind:   "metric_set",
+			Domain: "apm",
+			Name:   "apm.metric.service",
+			Spec: map[string]any{
+				"labels": map[string]any{
+					"service_id": "string",
+					// No "environment" label.
+				},
+			},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	dl := dataLinkInput("apm", "apm.service_related_to_apm.metric.service",
+		"apm", "apm.service", "apm", "apm.metric.service", "metric_set")
+
+	resp, err := svc.WriteDataLinks(ctx, ws, DataLinkWriteRequest{DataLinks: []DataLinkInput{dl}})
+	if err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	// Should warn about dest field "environment" not found in metric_set.
+	foundDestWarning := false
+	for _, w := range resp.Warnings {
+		if w.Field == "data_links[0].fields_mapping" && contains(w.Reason, "dest field") && contains(w.Reason, "environment") {
+			foundDestWarning = true
+			break
+		}
+	}
+	if !foundDestWarning {
+		t.Fatalf("expected dest field_mapping warning for 'environment', got warnings: %+v", resp.Warnings)
+	}
+}
+
+func contains(s, substr string) bool {
+	return len(s) >= len(substr) && (s == substr || len(s) > 0 && containsSubstr(s, substr))
+}
+
+func containsSubstr(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
+}
