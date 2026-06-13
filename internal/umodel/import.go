@@ -111,8 +111,58 @@ func collectImportFiles(root string) ([]string, int, error) {
 	if err != nil {
 		return nil, skipped, err
 	}
-	sort.Strings(files)
+	// Sort files by kind priority to respect dependency order:
+	// EntitySet → EntitySetLink → MetricSet → Prometheus → DataLink → StorageLink
+	sort.SliceStable(files, func(i, j int) bool {
+		pi := kindImportPriority(peekFileKind(files[i]))
+		pj := kindImportPriority(peekFileKind(files[j]))
+		if pi != pj {
+			return pi < pj
+		}
+		return files[i] < files[j]
+	})
 	return files, skipped, nil
+}
+
+// kindImportPriority returns a numeric priority for the given UModel element kind.
+// Lower values are imported first. The order ensures dependencies are registered
+// before dependents: entity_set → entity_set_link → metric_set → prometheus → data_link → storage_link.
+func kindImportPriority(kind string) int {
+	switch kind {
+	case "entity_set":
+		return 0
+	case "entity_set_link":
+		return 1
+	case "metric_set":
+		return 2
+	case "prometheus":
+		return 3
+	case "data_link":
+		return 4
+	case "storage_link":
+		return 5
+	default:
+		return 99
+	}
+}
+
+// peekFileKind reads just enough of a YAML/JSON file to extract the top-level "kind" field.
+// Returns "" if the file cannot be read or parsed.
+func peekFileKind(path string) string {
+	body, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	var partial struct {
+		Kind string `yaml:"kind" json:"kind"`
+	}
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".json":
+		json.Unmarshal(body, &partial)
+	case ".yaml", ".yml":
+		yaml.Unmarshal(body, &partial)
+	}
+	return partial.Kind
 }
 
 func shouldSkipDir(name string) bool {
