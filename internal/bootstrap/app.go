@@ -14,6 +14,7 @@ import (
 	"github.com/alibaba/UnifiedModel/internal/agentgateway"
 	"github.com/alibaba/UnifiedModel/internal/entitystore"
 	"github.com/alibaba/UnifiedModel/internal/graphstore"
+	_ "github.com/alibaba/UnifiedModel/internal/graphstore/provider/age"
 	_ "github.com/alibaba/UnifiedModel/internal/graphstore/provider/ladybug"
 	"github.com/alibaba/UnifiedModel/internal/query"
 	"github.com/alibaba/UnifiedModel/internal/sampledata"
