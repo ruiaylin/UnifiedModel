@@ -71,7 +71,7 @@ func NewAppWithGraphStore(dataRoot string, config graphstore.ProviderConfig) (*A
 		config.Type = providerType
 	}
 	workspaceSvc := workspace.NewService(dataRoot, nil)
-	if providerType == graphstore.ProviderTypeFileMemory || providerType == graphstore.ProviderTypeLadybug {
+	if usesPersistentWorkspaceMetadata(providerType) {
 		var err error
 		workspaceSvc, err = workspace.NewPersistentServiceForProvider(dataRoot, nil, providerType)
 		if err != nil {
@@ -103,6 +103,15 @@ func NewAppWithGraphStore(dataRoot string, config graphstore.ProviderConfig) (*A
 		Search:       searchSvc,
 		AgentGateway: agentSvc,
 	}, nil
+}
+
+func usesPersistentWorkspaceMetadata(providerType string) bool {
+	switch providerType {
+	case graphstore.ProviderTypeFileMemory, graphstore.ProviderTypeLadybug, graphstore.ProviderTypePostgresAge:
+		return true
+	default:
+		return false
+	}
 }
 
 func (a *App) Handler() http.Handler {

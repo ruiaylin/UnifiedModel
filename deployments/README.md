@@ -5,7 +5,7 @@ This directory contains local deployment assets for UModel Open Source.
 | Path | Purpose |
 |---|---|
 | `docker/Dockerfile` | Builds `umodel-server` into a small runtime image. |
-| `compose/docker-compose.yaml` | Runs the server with a persistent local Docker volume. |
+| `compose/docker-compose.yaml` | Runs the PG+AGE server and Vite web UI with persistent local Docker volumes. |
 
 ## Provider Default
 
@@ -48,6 +48,13 @@ curl http://localhost:8080/healthz
 
 ## Docker Compose
 
+The Compose stack is configured for the local PG+AGE test environment. Copy the example env file and inject the real `UMODEL_DSN` value through your shell, secret manager, or an untracked `deployments/compose/.env` file:
+
+```bash
+cp deployments/compose/.env.example deployments/compose/.env
+$EDITOR deployments/compose/.env
+```
+
 Start:
 
 ```bash
@@ -70,22 +77,24 @@ docker compose -f deployments/compose/docker-compose.yaml down -v
 
 | Setting | Default | Notes |
 |---|---|---|
-| API port | `8080` | Exposed as `http://localhost:8080`. |
+| API port | `8082` | Exposed as `http://localhost:8082`; override with `UMODEL_SERVER_PORT`. |
+| Web UI port | `5174` | Exposed as `http://localhost:5174`; override with `UMODEL_WEB_PORT`. |
 | Data directory | `/data` | Mounted to the `umodel-data` Docker volume in Compose. |
-| GraphStore provider | `file.memory` | Stores JSON snapshots under `/data/graphstore/file-memory/`. |
+| GraphStore provider | `postgres.age` | Override with `UMODEL_GRAPHSTORE`; requires `UMODEL_DSN` for PG+AGE. |
+| Graph prefix | `ws_` | Override with `UMODEL_GRAPH_PREFIX`. |
 
-Workspace metadata is persisted separately at `/data/workspaces.json` when using `file.memory`.
+Workspace metadata is persisted separately at `/data/workspaces.json` for persistent providers, including `postgres.age`.
 
 ## Import The Demo In Docker
 
 After the server starts:
 
 ```bash
-go run ./cmd/umctl --addr http://localhost:8080 workspace create demo '{"name":"Demo"}'
-curl -X POST http://localhost:8080/api/v1/samples/demo/multi-domain-quickstart:import \
+go run ./cmd/umctl --addr http://localhost:8082 workspace create demo '{"name":"Demo"}'
+curl -X POST http://localhost:8082/api/v1/samples/demo/multi-domain-quickstart:import \
   -H 'Content-Type: application/json' \
   -d '{}'
-go run ./cmd/umctl --addr http://localhost:8080 query run demo ".umodel | limit 5"
+go run ./cmd/umctl --addr http://localhost:8082 query run demo ".umodel | limit 5"
 ```
 
 ## Compatibility Notes
