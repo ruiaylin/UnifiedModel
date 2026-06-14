@@ -82,6 +82,18 @@ func (p *Provider) OpenWorkspace(ctx context.Context, workspace model.WorkspaceM
 			return fmt.Errorf("parse dsn: %w", err)
 		}
 		poolConfig.MaxConns = int32(p.maxOpenConns)
+
+		// Set search_path to include ag_catalog for AGE functions
+		if poolConfig.ConnConfig.RuntimeParams == nil {
+			poolConfig.ConnConfig.RuntimeParams = make(map[string]string)
+		}
+		// Preserve existing search_path if any, otherwise default to public
+		currentPath := poolConfig.ConnConfig.RuntimeParams["search_path"]
+		if currentPath == "" {
+			currentPath = "public"
+		}
+		poolConfig.ConnConfig.RuntimeParams["search_path"] = currentPath + ",ag_catalog"
+
 		pool, err := pgxpool.NewWithConfig(ctx, poolConfig)
 		if err != nil {
 			return fmt.Errorf("create pool: %w", err)
@@ -144,7 +156,7 @@ func (p *Provider) ensureSchemaLocked(ctx context.Context, graphName string) err
 	for _, label := range []string{"umodel_node", "entity"} {
 		// Create a temporary node to establish the label
 		createQuery := fmt.Sprintf(
-			`SELECT * FROM cypher('%s', $$ CREATE (n:%s {_temp: true}) RETURN n $$) AS (v agtype)`,
+			`SELECT * FROM ag_catalog.cypher('%s', $$ CREATE (n:%s {_temp: true}) RETURN n $$) AS (v agtype)`,
 			pgEscape(graphName), label)
 		rows, err := p.pool.Query(ctx, createQuery)
 		if err != nil {
@@ -157,7 +169,7 @@ func (p *Provider) ensureSchemaLocked(ctx context.Context, graphName string) err
 
 		// Delete the temporary node
 		deleteQuery := fmt.Sprintf(
-			`SELECT * FROM cypher('%s', $$ MATCH (n:%s) WHERE n._temp = true DELETE n $$) AS (v agtype)`,
+			`SELECT * FROM ag_catalog.cypher('%s', $$ MATCH (n:%s) WHERE n._temp = true DELETE n $$) AS (v agtype)`,
 			pgEscape(graphName), label)
 		rows2, err := p.pool.Query(ctx, deleteQuery)
 		if err != nil {
@@ -190,7 +202,7 @@ func (p *Provider) PutUModelElements(ctx context.Context, batch model.UModelElem
 			pgEscape(string(spec)))
 
 		cypherSQL := fmt.Sprintf(
-			`SELECT * FROM cypher('%s', $$ %s $$) AS (v agtype)`,
+			`SELECT * FROM ag_catalog.cypher('%s', $$ %s $$) AS (v agtype)`,
 			pgEscape(handle.graphName), query)
 
 		if _, err := p.pool.Exec(ctx, cypherSQL); err != nil {
@@ -209,7 +221,7 @@ func (p *Provider) GetUModelSnapshot(ctx context.Context, req model.UModelSnapsh
 
 	// Return full vertex, extract properties in Go
 	query := fmt.Sprintf(
-		`SELECT * FROM cypher('%s', $$ MATCH (n:umodel_node) RETURN n ORDER BY n.key $$) AS (v agtype)`,
+		`SELECT * FROM ag_catalog.cypher('%s', $$ MATCH (n:umodel_node) RETURN n ORDER BY n.key $$) AS (v agtype)`,
 		pgEscape(handle.graphName))
 
 	rows, err := p.cypherQuery(ctx, query)
@@ -304,7 +316,7 @@ func (p *Provider) WriteRelations(ctx context.Context, batch model.RelationWrite
 			pgEscape(string(properties)))
 
 		cypherSQL := fmt.Sprintf(
-			`SELECT * FROM cypher('%s', $$ %s $$) AS (v agtype)`,
+			`SELECT * FROM ag_catalog.cypher('%s', $$ %s $$) AS (v agtype)`,
 			pgEscape(handle.graphName), query)
 
 		if _, err := p.pool.Exec(ctx, cypherSQL); err != nil {
@@ -343,7 +355,7 @@ func (p *Provider) QueryEntities(ctx context.Context, plan model.EntityQueryPlan
 
 	// Return full vertex, extract properties in Go
 	query := fmt.Sprintf(
-		`SELECT * FROM cypher('%s', $$ MATCH (e:entity) WHERE %s RETURN e LIMIT %d $$) AS (v agtype)`,
+		`SELECT * FROM ag_catalog.cypher('%s', $$ MATCH (e:entity) WHERE %s RETURN e LIMIT %d $$) AS (v agtype)`,
 		pgEscape(handle.graphName), whereClause, limit)
 
 	rows, err := p.cypherQuery(ctx, query)
@@ -379,7 +391,7 @@ func (p *Provider) QueryTopo(ctx context.Context, plan model.TopoQueryPlan) (mod
 
 	// Return full edge and endpoint vertices
 	query := fmt.Sprintf(
-		`SELECT * FROM cypher('%s', $$ MATCH (s:entity)-[r:topo]->(d:entity) WHERE r.deleted = false RETURN s, r, d LIMIT %d $$) AS (src agtype, edge agtype, dest agtype)`,
+		`SELECT * FROM ag_catalog.cypher('%s', $$ MATCH (s:entity)-[r:topo]->(d:entity) WHERE r.deleted = false RETURN s, r, d LIMIT %d $$) AS (src agtype, edge agtype, dest agtype)`,
 		pgEscape(handle.graphName), limit)
 
 	rows, err := p.cypherQuery(ctx, query)
@@ -425,7 +437,7 @@ func (p *Provider) queryControlledCypher(ctx context.Context, handle *workspaceH
 
 func (p *Provider) cypherGraph(ctx context.Context, handle *workspaceHandle, plan model.TopoQueryPlan) (cypher.Graph, error) {
 	entityQuery := fmt.Sprintf(
-		`SELECT * FROM cypher('%s', $$ MATCH (e:entity) WHERE e.deleted = false RETURN e LIMIT %d $$) AS (v agtype)`,
+		`SELECT * FROM ag_catalog.cypher('%s', $$ MATCH (e:entity) WHERE e.deleted = false RETURN e LIMIT %d $$) AS (v agtype)`,
 		pgEscape(handle.graphName), ageCapabilities().MaxLimit)
 
 	entityRows, err := p.cypherQuery(ctx, entityQuery)
@@ -448,7 +460,7 @@ func (p *Provider) cypherGraph(ctx context.Context, handle *workspaceHandle, pla
 	}
 
 	relationQuery := fmt.Sprintf(
-		`SELECT * FROM cypher('%s', $$ MATCH (s:entity)-[r:topo]->(d:entity) WHERE r.deleted = false RETURN s, r, d LIMIT %d $$) AS (src agtype, edge agtype, dest agtype)`,
+		`SELECT * FROM ag_catalog.cypher('%s', $$ MATCH (s:entity)-[r:topo]->(d:entity) WHERE r.deleted = false RETURN s, r, d LIMIT %d $$) AS (src agtype, edge agtype, dest agtype)`,
 		pgEscape(handle.graphName), ageCapabilities().MaxLimit)
 
 	relationRows, err := p.cypherQuery(ctx, relationQuery)
@@ -539,7 +551,7 @@ func (p *Provider) executeEntityUpsert(ctx context.Context, handle *workspaceHan
 		pgEscape(string(properties)))
 
 	cypherSQL := fmt.Sprintf(
-		`SELECT * FROM cypher('%s', $$ %s $$) AS (v agtype)`,
+		`SELECT * FROM ag_catalog.cypher('%s', $$ %s $$) AS (v agtype)`,
 		pgEscape(handle.graphName), query)
 
 	if _, err := p.pool.Exec(ctx, cypherSQL); err != nil {
@@ -553,7 +565,7 @@ func (p *Provider) ensureEntityNode(ctx context.Context, handle *workspaceHandle
 
 	// Check if entity exists
 	checkQuery := fmt.Sprintf(
-		`SELECT * FROM cypher('%s', $$ MATCH (e:entity {entity_key: '%s'}) RETURN e $$) AS (v agtype)`,
+		`SELECT * FROM ag_catalog.cypher('%s', $$ MATCH (e:entity {entity_key: '%s'}) RETURN e $$) AS (v agtype)`,
 		pgEscape(handle.graphName), pgEscape(key))
 
 	rows, err := p.cypherQuery(ctx, checkQuery)

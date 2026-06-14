@@ -4,6 +4,10 @@ services:
       context: ../..
       dockerfile: deployments/docker/Dockerfile
     command: ["--addr", ":8080", "--data", "/data", "--graphstore", "file.memory"]
+    environment:
+      - UMODEL_DSN=${UMODEL_DSN:-}
+      - UMODEL_GRAPH_PREFIX=${UMODEL_GRAPH_PREFIX:-ws_}
+      - UMODEL_GRAPHSTORE=${UMODEL_GRAPHSTORE:-file.memory}
     ports:
       - "8080:8080"
     volumes:

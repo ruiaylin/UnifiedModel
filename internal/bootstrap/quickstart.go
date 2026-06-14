@@ -41,20 +41,33 @@ func (a *App) LoadQuickStart(ctx context.Context, opts QuickStartOptions) (model
 		sample = DefaultQuickStartSample
 	}
 
-	if _, err := a.Workspace.GetWorkspace(ctx, workspaceID); err != nil {
+	var metadata model.WorkspaceMetadata
+	var err error
+	if metadata, err = a.Workspace.GetWorkspace(ctx, workspaceID); err != nil {
 		if !apperrors.IsCode(err, apperrors.CodeNotFound) {
 			return model.SampleImportResult{}, err
 		}
-		if _, err := a.Workspace.CreateWorkspace(ctx, model.CreateWorkspaceRequest{
+		if metadata, err = a.Workspace.CreateWorkspace(ctx, model.CreateWorkspaceRequest{
 			ID:          workspaceID,
 			Name:        workspaceName,
 			Description: workspaceDescription,
 			Labels: map[string]string{
 				"umodel.io/quickstart": "true",
 			},
-		}); err != nil && !apperrors.IsCode(err, apperrors.CodeConflict) {
-			return model.SampleImportResult{}, err
+		}); err != nil {
+			if !apperrors.IsCode(err, apperrors.CodeConflict) {
+				return model.SampleImportResult{}, err
+			}
+			// If conflict, get the existing one
+			metadata, err = a.Workspace.GetWorkspace(ctx, workspaceID)
+			if err != nil {
+				return model.SampleImportResult{}, err
+			}
 		}
+	}
+
+	if err := a.GraphStore.OpenWorkspace(ctx, metadata); err != nil {
+		return model.SampleImportResult{}, err
 	}
 
 	return a.Samples.Import(ctx, workspaceID, sample)

@@ -294,6 +294,10 @@ func (a *App) handleWorkspaces(w http.ResponseWriter, r *http.Request) {
 			writeError(w, err)
 			return
 		}
+		if err := a.GraphStore.OpenWorkspace(r.Context(), metadata); err != nil {
+			writeError(w, err)
+			return
+		}
 		writeJSON(w, http.StatusCreated, metadata)
 	case http.MethodGet:
 		page, err := a.Workspace.ListWorkspaces(r.Context(), model.WorkspaceListRequest{
@@ -326,6 +330,10 @@ func (a *App) handleWorkspace(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		metadata, err := a.Workspace.GetWorkspace(r.Context(), id)
 		if err != nil {
+			writeError(w, err)
+			return
+		}
+		if err := a.GraphStore.OpenWorkspace(r.Context(), metadata); err != nil {
 			writeError(w, err)
 			return
 		}
