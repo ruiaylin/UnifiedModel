@@ -63,6 +63,32 @@ func (p *Provider) OpenWorkspace(ctx context.Context, workspace model.WorkspaceM
 	return p.openWorkspaceLocked(workspace)
 }
 
+func (p *Provider) DiscoverWorkspaces(ctx context.Context) ([]string, error) {
+	root := filepath.Join(p.root, "instances")
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("read ladybug instances root: %w", err)
+	}
+
+	var ids []string
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		id := entry.Name()
+		// Check if ladybug DB exists in this instance
+		dbPath := filepath.Join(root, id, "storage", "graph", "local", "ladybug")
+		if info, err := os.Stat(dbPath); err == nil && info.IsDir() {
+			ids = append(ids, id)
+		}
+	}
+	sort.Strings(ids)
+	return ids, nil
+}
+
 func (p *Provider) Close() {
 	p.mu.Lock()
 	defer p.mu.Unlock()

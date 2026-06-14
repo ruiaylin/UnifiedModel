@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -74,7 +75,57 @@ func (p *Provider) OpenWorkspace(ctx context.Context, workspace model.WorkspaceM
 	if _, ok := p.workspaces[workspace.ID]; ok {
 		return nil
 	}
+	return p.openWorkspaceLocked(ctx, workspace)
+}
 
+func (p *Provider) DiscoverWorkspaces(ctx context.Context) ([]string, error) {
+	p.mu.Lock()
+	pool := p.pool
+	p.mu.Unlock()
+
+	if pool == nil {
+		// Temporary pool for discovery if not already open
+		poolConfig, err := pgxpool.ParseConfig(p.dsnPrefix)
+		if err != nil {
+			return nil, fmt.Errorf("parse dsn: %w", err)
+		}
+		if poolConfig.ConnConfig.RuntimeParams == nil {
+			poolConfig.ConnConfig.RuntimeParams = make(map[string]string)
+		}
+		poolConfig.ConnConfig.RuntimeParams["search_path"] = "public,ag_catalog"
+		
+		tempPool, err := pgxpool.NewWithConfig(ctx, poolConfig)
+		if err != nil {
+			return nil, fmt.Errorf("create discovery pool: %w", err)
+		}
+		defer tempPool.Close()
+		pool = tempPool
+	}
+
+	rows, err := pool.Query(ctx, "SELECT name FROM ag_catalog.ag_graph")
+	if err != nil {
+		return nil, fmt.Errorf("query ag_graph: %w", err)
+	}
+	defer rows.Close()
+
+	var ids []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		if strings.HasPrefix(name, p.graphPrefix) {
+			id := strings.TrimPrefix(name, p.graphPrefix)
+			if id != "" {
+				ids = append(ids, id)
+			}
+		}
+	}
+	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
+	return ids, nil
+}
+
+func (p *Provider) openWorkspaceLocked(ctx context.Context, workspace model.WorkspaceMetadata) error {
 	// Initialize shared pool if needed
 	if p.pool == nil {
 		poolConfig, err := pgxpool.ParseConfig(p.dsnPrefix)
@@ -303,7 +354,7 @@ func (p *Provider) WriteRelations(ctx context.Context, batch model.RelationWrite
 
 		// Use safe string interpolation
 		query := fmt.Sprintf(
-			`MATCH (s:entity {entity_key: '%s'}), (d:entity {entity_key: '%s'}) CREATE (s)-[r:topo {relation_key: '%s', relation_type: '%s', method: '%s', first_observed_time: %d, last_observed_time: %d, keep_alive_seconds: %d, deleted: %t, properties: '%s'}]->(d) RETURN r`,
+			`MATCH (s:entity {entity_key: '%s'}), (d:entity {entity_key: '%s'}) CREATE (s)-[r:topo {relation_key: '%s', relation_type: '%s', method: '%s', first_observed_time: %d, last_observed_time: %d, keep_alive_seconds: %d, deleted: %t, properties: agtype_in('%s')}]->(d) RETURN r`,
 			pgEscape(srcKey),
 			pgEscape(destKey),
 			pgEscape(key),
@@ -533,13 +584,13 @@ func (p *Provider) executeEntityUpsert(ctx context.Context, handle *workspaceHan
 	firstObserved := asInt64(payload["__first_observed_time__"])
 	lastObserved := asInt64(payload["__last_observed_time__"])
 	keepAlive := asInt64(payload["__keep_alive_seconds__"])
-	deleted := isDeletedMethod(method)
-	properties, _ := json.Marshal(payload)
+	deleted = isDeletedMethod(method)
+		properties, _ := json.Marshal(payload)
 
-	// Use safe string interpolation for Cypher parameters
-	query := fmt.Sprintf(
-		`MERGE (e:entity {entity_key: '%s'}) SET e.domain = '%s', e.entity_type = '%s', e.entity_id = '%s', e.method = '%s', e.first_observed_time = %d, e.last_observed_time = %d, e.keep_alive_seconds = %d, e.deleted = %t, e.properties = '%s'`,
-		pgEscape(key),
+		// Use safe string interpolation for Cypher parameters
+		query := fmt.Sprintf(
+			`MERGE (e:entity {entity_key: '%s'}) SET e.domain = '%s', e.entity_type = '%s', e.entity_id = '%s', e.method = '%s', e.first_observed_time = %d, e.last_observed_time = %d, e.keep_alive_seconds = %d, e.deleted = %t, e.properties = agtype_in('%s')`,
+			pgEscape(key),
 		pgEscape(domain),
 		pgEscape(entityType),
 		pgEscape(entityID),
@@ -771,6 +822,12 @@ func extractProperties(val any) map[string]any {
 			if p, ok := props.(map[string]any); ok {
 				return p
 			}
+			if s, ok := props.(string); ok && s != "" {
+				var p map[string]any
+				if err := json.Unmarshal([]byte(s), &p); err == nil {
+					return p
+				}
+			}
 		}
 		return v
 	default:
@@ -784,6 +841,16 @@ func entityPayloadFromAgtype(val any) model.EntityPayload {
 	payload := model.EntityPayload{}
 	for k, v := range props {
 		payload[k] = v
+	}
+	// Map internal fields if they exist at top level (for recovery or direct AGE queries)
+	if payload["__domain__"] == nil && props["domain"] != nil {
+		payload["__domain__"] = props["domain"]
+	}
+	if payload["__entity_type__"] == nil && props["entity_type"] != nil {
+		payload["__entity_type__"] = props["entity_type"]
+	}
+	if payload["__entity_id__"] == nil && props["entity_id"] != nil {
+		payload["__entity_id__"] = props["entity_id"]
 	}
 	// Ensure required fields have defaults
 	if payload["__method__"] == nil {
@@ -818,8 +885,11 @@ func relationPayloadFromAgtype(srcVal, edgeVal, destVal any) model.RelationPaylo
 	payload["__dest_entity_type__"] = destProps["__entity_type__"]
 	payload["__dest_entity_id__"] = destProps["__entity_id__"]
 
-	if payload["__relation_type__"] == nil {
+	if payload["__relation_type__"] == nil && edgeProps["relation_type"] != nil {
 		payload["__relation_type__"] = edgeProps["relation_type"]
+	}
+	if payload["__relation_key__"] == nil && edgeProps["relation_key"] != nil {
+		payload["__relation_key__"] = edgeProps["relation_key"]
 	}
 	if payload["__method__"] == nil {
 		payload["__method__"] = "Update"
