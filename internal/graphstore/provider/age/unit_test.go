@@ -426,6 +426,75 @@ func TestExtractProperties(t *testing.T) {
 	}
 }
 
+// TestEntityPayloadFlattening verifies the read path expands the full original
+// payload stored in the nested "properties" JSON (flattened business fields plus
+// unified identity fields) and does not leak raw storage columns.
+func TestEntityPayloadFlattening(t *testing.T) {
+	vertex := `{id: 1, label: "entity", properties: {` +
+		`entity_key: "infra/host/h1", domain: "infra", entity_type: "host", entity_id: "h1", deleted: false, ` +
+		`properties: {__domain__: "infra", __entity_type__: "host", __entity_id__: "h1", __category__: "compute", display_name: "Host 1", __method__: "Update", __deleted__: false}` +
+		`}}::vertex`
+
+	payload := entityPayloadFromAgtype(vertex)
+
+	if payload["display_name"] != "Host 1" {
+		t.Errorf("expected flattened display_name=Host 1, got %v", payload["display_name"])
+	}
+	if payload["__category__"] != "compute" {
+		t.Errorf("expected flattened __category__=compute, got %v", payload["__category__"])
+	}
+	if payload["__domain__"] != "infra" || payload["__entity_type__"] != "host" || payload["__entity_id__"] != "h1" {
+		t.Errorf("expected unified identity fields, got %v", map[string]any(payload))
+	}
+	for _, raw := range []string{"entity_key", "domain", "entity_type", "entity_id", "properties"} {
+		if _, ok := payload[raw]; ok {
+			t.Errorf("raw storage column %q leaked into payload", raw)
+		}
+	}
+}
+
+// TestRelationPayloadFlattening verifies relations expand the nested payload and
+// resolve endpoint identity fields.
+func TestRelationPayloadFlattening(t *testing.T) {
+	src := `{id: 1, label: "entity", properties: {properties: {__domain__: "infra", __entity_type__: "host", __entity_id__: "h1"}}}::vertex`
+	dest := `{id: 2, label: "entity", properties: {properties: {__domain__: "infra", __entity_type__: "svc", __entity_id__: "s1"}}}::vertex`
+	edge := `{id: 3, label: "topo", properties: {relation_type: "runs_on", relation_key: "rk", deleted: false, ` +
+		`properties: {__relation_type__: "runs_on", __src_domain__: "infra", __src_entity_type__: "host", __src_entity_id__: "h1", __dest_domain__: "infra", __dest_entity_type__: "svc", __dest_entity_id__: "s1", weight: "5"}}}::edge`
+
+	payload := relationPayloadFromAgtype(src, edge, dest)
+
+	if payload["weight"] != "5" {
+		t.Errorf("expected flattened weight=5, got %v", payload["weight"])
+	}
+	if payload["__src_domain__"] != "infra" || payload["__dest_entity_id__"] != "s1" {
+		t.Errorf("expected endpoint identity fields, got %v", map[string]any(payload))
+	}
+	if payload["__relation_type__"] != "runs_on" {
+		t.Errorf("expected __relation_type__=runs_on, got %v", payload["__relation_type__"])
+	}
+
+	row := relationRow(payload)
+	if row["src"] != "infra/host/h1" || row["dest"] != "infra/svc/s1" {
+		t.Errorf("expected built src/dest, got src=%v dest=%v", row["src"], row["dest"])
+	}
+}
+
+// TestNestedPayload covers both the already-parsed map case and the raw JSON
+// string case returned by AGE.
+func TestNestedPayload(t *testing.T) {
+	fromMap := nestedPayload(map[string]any{"a": "1"})
+	if fromMap["a"] != "1" {
+		t.Errorf("expected map passthrough, got %v", fromMap)
+	}
+	fromString := nestedPayload(`{"a":"1","b":2}`)
+	if fromString["a"] != "1" {
+		t.Errorf("expected JSON string decode, got %v", fromString)
+	}
+	if nestedPayload("") != nil || nestedPayload(nil) != nil {
+		t.Errorf("expected nil for empty/nil input")
+	}
+}
+
 // Helper functions
 
 func cloneMapRelation(source model.RelationPayload) model.RelationPayload {
