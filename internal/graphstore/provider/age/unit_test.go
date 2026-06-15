@@ -11,16 +11,16 @@ import (
 
 func TestParseAgtypeMap(t *testing.T) {
 	tests := []struct {
-		name    string
-		input   string
-		wantLen int
+		name     string
+		input    string
+		wantLen  int
 		checkKey string
 		checkVal any
 	}{
 		{
-			name:    "simple map",
-			input:   `{key: "value", num: 42}`,
-			wantLen: 2,
+			name:     "simple map",
+			input:    `{key: "value", num: 42}`,
+			wantLen:  2,
 			checkKey: "key",
 			checkVal: "value",
 		},
@@ -30,23 +30,23 @@ func TestParseAgtypeMap(t *testing.T) {
 			wantLen: 0,
 		},
 		{
-			name:    "with type suffix",
-			input:   `{key: "value"}::vertex`,
-			wantLen: 1,
+			name:     "with type suffix",
+			input:    `{key: "value"}::vertex`,
+			wantLen:  1,
 			checkKey: "key",
 			checkVal: "value",
 		},
 		{
-			name:    "boolean values",
-			input:   `{active: true, deleted: false}`,
-			wantLen: 2,
+			name:     "boolean values",
+			input:    `{active: true, deleted: false}`,
+			wantLen:  2,
 			checkKey: "active",
 			checkVal: true,
 		},
 		{
-			name:    "null value",
-			input:   `{value: null}`,
-			wantLen: 1,
+			name:     "null value",
+			input:    `{value: null}`,
+			wantLen:  1,
 			checkKey: "value",
 			checkVal: nil,
 		},
@@ -204,8 +204,8 @@ func TestEntityMatches(t *testing.T) {
 			expect: false,
 		},
 		{
-			name: "deleted entity",
-			plan: model.QueryPlan{Filters: map[string]any{}},
+			name:   "deleted entity",
+			plan:   model.QueryPlan{Filters: map[string]any{}},
 			expect: false,
 		},
 	}
@@ -450,6 +450,50 @@ func TestEntityPayloadFlattening(t *testing.T) {
 		if _, ok := payload[raw]; ok {
 			t.Errorf("raw storage column %q leaked into payload", raw)
 		}
+	}
+}
+
+// TestEntityPayloadFlatteningEscapedProperties mirrors the exact agtype AGE
+// returns from a live graph: the nested business payload is serialized as an
+// escaped JSON *string* (not an inline agtype map). The read path must JSON-
+// unescape it so the full flattened header set survives instead of collapsing
+// to the 5 fallback identity fields.
+func TestEntityPayloadFlatteningEscapedProperties(t *testing.T) {
+	vertex := `{"id": 1125899906842631, "label": "entity", "properties": {"domain": "devops", "method": "Update", "deleted": false, "entity_id": "h1", "entity_key": "devops/devops.service/h1", ` +
+		`"properties": "{\"__category__\":\"entity\",\"__domain__\":\"devops\",\"__entity_type__\":\"devops.service\",\"__entity_id__\":\"h1\",\"display_name\":\"delivery-service\",\"owner\":\"commerce-engineering\",\"__method__\":\"Update\",\"__deleted__\":false}", ` +
+		`"entity_type": "devops.service"}}::vertex`
+
+	payload := entityPayloadFromAgtype(vertex)
+
+	if payload["display_name"] != "delivery-service" {
+		t.Errorf("expected flattened display_name=delivery-service, got %v", payload["display_name"])
+	}
+	if payload["__category__"] != "entity" {
+		t.Errorf("expected flattened __category__=entity, got %v", payload["__category__"])
+	}
+	if payload["owner"] != "commerce-engineering" {
+		t.Errorf("expected flattened owner, got %v", payload["owner"])
+	}
+	if payload["__domain__"] != "devops" || payload["__entity_type__"] != "devops.service" || payload["__entity_id__"] != "h1" {
+		t.Errorf("expected unified identity fields, got %v", map[string]any(payload))
+	}
+	for _, raw := range []string{"entity_key", "domain", "entity_type", "entity_id", "properties"} {
+		if _, ok := payload[raw]; ok {
+			t.Errorf("raw storage column %q leaked into payload", raw)
+		}
+	}
+}
+
+// TestParseAgtypeStringUnescape verifies quoted agtype strings are JSON-
+// unescaped so embedded JSON payloads decode cleanly.
+func TestParseAgtypeStringUnescape(t *testing.T) {
+	in := `"{\"k\":\"v\"}"`
+	got := parseAgtypeString(in)
+	if got != `{"k":"v"}` {
+		t.Errorf("expected unescaped JSON, got %q", got)
+	}
+	if parseAgtypeString(`"plain"`) != "plain" {
+		t.Errorf("expected plain string passthrough")
 	}
 }
 

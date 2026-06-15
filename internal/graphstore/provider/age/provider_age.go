@@ -74,6 +74,19 @@ func init() {
 	})
 }
 
+// loadAgeAfterConnect installs the AGE planner hook on every pooled connection.
+//
+// When the `age` library is not in shared_preload_libraries it is only active
+// in sessions that have run `LOAD 'age'`. Pooled connections that skip the load
+// fail intermittently with "unhandled cypher(cstring) function call" under
+// concurrency. Running LOAD on connect makes cypher() work on every connection.
+func loadAgeAfterConnect(ctx context.Context, conn *pgx.Conn) error {
+	if _, err := conn.Exec(ctx, "LOAD 'age'"); err != nil {
+		return fmt.Errorf("load age extension: %w", err)
+	}
+	return nil
+}
+
 func (p *Provider) OpenWorkspace(ctx context.Context, workspace model.WorkspaceMetadata) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -103,6 +116,7 @@ func (p *Provider) DiscoverWorkspaces(ctx context.Context) ([]string, error) {
 		// query protocol; concurrent calls otherwise fail with
 		// "unhandled cypher(cstring) function call". Force simple protocol.
 		poolConfig.ConnConfig.DefaultQueryExecMode = pgx.QueryExecModeSimpleProtocol
+		poolConfig.AfterConnect = loadAgeAfterConnect
 
 		tempPool, err := pgxpool.NewWithConfig(ctx, poolConfig)
 		if err != nil {
@@ -158,6 +172,7 @@ func (p *Provider) openWorkspaceLocked(ctx context.Context, workspace model.Work
 		// query protocol; concurrent calls otherwise fail with
 		// "unhandled cypher(cstring) function call". Force simple protocol.
 		poolConfig.ConnConfig.DefaultQueryExecMode = pgx.QueryExecModeSimpleProtocol
+		poolConfig.AfterConnect = loadAgeAfterConnect
 
 		pool, err := pgxpool.NewWithConfig(ctx, poolConfig)
 		if err != nil {
@@ -774,9 +789,21 @@ func parseAgtypeList(val string) []any {
 	return result
 }
 
-// parseAgtypeString parses a quoted string
+// parseAgtypeString parses a quoted string, unescaping JSON escape sequences.
+//
+// AGE emits agtype strings using JSON-compatible double-quoting, so the nested
+// entity/relation payload is serialized as an escaped JSON string, e.g.
+// "{\"__category__\":\"entity\"}". Stripping only the outer quotes would leave
+// the backslash escapes intact and make the downstream json.Unmarshal in
+// nestedPayload fail, collapsing the read row back to the 5 fallback identity
+// fields. Decoding via encoding/json unescapes correctly so the full flattened
+// header set is preserved.
 func parseAgtypeString(val string) string {
 	if len(val) >= 2 && val[0] == '"' && val[len(val)-1] == '"' {
+		var s string
+		if err := json.Unmarshal([]byte(val), &s); err == nil {
+			return s
+		}
 		return val[1 : len(val)-1]
 	}
 	return val
