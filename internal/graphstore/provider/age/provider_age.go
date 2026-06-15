@@ -13,11 +13,11 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/alibaba/UnifiedModel/internal/cypher"
 	"github.com/alibaba/UnifiedModel/internal/graphstore"
 	"github.com/alibaba/UnifiedModel/pkg/contract"
 	"github.com/alibaba/UnifiedModel/pkg/model"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // Provider implements contract.GraphStore using PostgreSQL AGE extension.
@@ -93,7 +93,7 @@ func (p *Provider) DiscoverWorkspaces(ctx context.Context) ([]string, error) {
 			poolConfig.ConnConfig.RuntimeParams = make(map[string]string)
 		}
 		poolConfig.ConnConfig.RuntimeParams["search_path"] = "public,ag_catalog"
-		
+
 		tempPool, err := pgxpool.NewWithConfig(ctx, poolConfig)
 		if err != nil {
 			return nil, fmt.Errorf("create discovery pool: %w", err)
@@ -584,13 +584,13 @@ func (p *Provider) executeEntityUpsert(ctx context.Context, handle *workspaceHan
 	firstObserved := asInt64(payload["__first_observed_time__"])
 	lastObserved := asInt64(payload["__last_observed_time__"])
 	keepAlive := asInt64(payload["__keep_alive_seconds__"])
-	deleted = isDeletedMethod(method)
-		properties, _ := json.Marshal(payload)
+	deleted := isDeletedMethod(method)
+	properties, _ := json.Marshal(payload)
 
-		// Use safe string interpolation for Cypher parameters
-		query := fmt.Sprintf(
-			`MERGE (e:entity {entity_key: '%s'}) SET e.domain = '%s', e.entity_type = '%s', e.entity_id = '%s', e.method = '%s', e.first_observed_time = %d, e.last_observed_time = %d, e.keep_alive_seconds = %d, e.deleted = %t, e.properties = agtype_in('%s')`,
-			pgEscape(key),
+	// Use safe string interpolation for Cypher parameters
+	query := fmt.Sprintf(
+		`MERGE (e:entity {entity_key: '%s'}) SET e.domain = '%s', e.entity_type = '%s', e.entity_id = '%s', e.method = '%s', e.first_observed_time = %d, e.last_observed_time = %d, e.keep_alive_seconds = %d, e.deleted = %t, e.properties = agtype_in('%s')`,
+		pgEscape(key),
 		pgEscape(domain),
 		pgEscape(entityType),
 		pgEscape(entityID),
