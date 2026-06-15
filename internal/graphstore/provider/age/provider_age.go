@@ -383,7 +383,7 @@ func (p *Provider) WriteRelations(ctx context.Context, batch model.RelationWrite
 
 		// Use safe string interpolation
 		query := fmt.Sprintf(
-			`MATCH (s:entity {entity_key: '%s'}), (d:entity {entity_key: '%s'}) CREATE (s)-[r:topo {relation_key: '%s', relation_type: '%s', method: '%s', first_observed_time: %d, last_observed_time: %d, keep_alive_seconds: %d, deleted: %t, properties: agtype_in('%s')}]->(d) RETURN r`,
+			`MATCH (s:entity {entity_key: '%s'}), (d:entity {entity_key: '%s'}) CREATE (s)-[r:topo {relation_key: '%s', relation_type: '%s', method: '%s', first_observed_time: %d, last_observed_time: %d, keep_alive_seconds: %d, deleted: %t, properties: '%s'}]->(d) RETURN r`,
 			pgEscape(srcKey),
 			pgEscape(destKey),
 			pgEscape(key),
@@ -618,7 +618,7 @@ func (p *Provider) executeEntityUpsert(ctx context.Context, handle *workspaceHan
 
 	// Use safe string interpolation for Cypher parameters
 	query := fmt.Sprintf(
-		`MERGE (e:entity {entity_key: '%s'}) SET e.domain = '%s', e.entity_type = '%s', e.entity_id = '%s', e.method = '%s', e.first_observed_time = %d, e.last_observed_time = %d, e.keep_alive_seconds = %d, e.deleted = %t, e.properties = agtype_in('%s')`,
+		`MERGE (e:entity {entity_key: '%s'}) SET e.domain = '%s', e.entity_type = '%s', e.entity_id = '%s', e.method = '%s', e.first_observed_time = %d, e.last_observed_time = %d, e.keep_alive_seconds = %d, e.deleted = %t, e.properties = '%s'`,
 		pgEscape(key),
 		pgEscape(domain),
 		pgEscape(entityType),

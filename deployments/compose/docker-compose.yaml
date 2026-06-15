@@ -12,6 +12,7 @@ services:
       - "${UMODEL_GRAPHSTORE:-postgres.age}"
       - "--graph-prefix"
       - "${UMODEL_GRAPH_PREFIX:-ws_}"
+      - "--quickstart"
     environment:
       UMODEL_DSN: ${UMODEL_DSN:-}
       UMODEL_GRAPH_PREFIX: ${UMODEL_GRAPH_PREFIX:-ws_}

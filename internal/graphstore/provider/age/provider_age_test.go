@@ -119,6 +119,7 @@ func TestProviderWriteAndQueryEntities(t *testing.T) {
 				"__first_observed_time__": time.Now().Unix(),
 				"__last_observed_time__":  time.Now().Unix(),
 				"__keep_alive_seconds__":  3600,
+				"display_name":            "test host",
 			},
 		},
 	}
@@ -141,5 +142,8 @@ func TestProviderWriteAndQueryEntities(t *testing.T) {
 	}
 	if len(qr.Rows) != 1 {
 		t.Fatalf("expected 1 row, got %d", len(qr.Rows))
+	}
+	if got := qr.Rows[0]["display_name"]; got != "test host" {
+		t.Fatalf("expected display_name to round-trip through AGE properties, got %v", got)
 	}
 }

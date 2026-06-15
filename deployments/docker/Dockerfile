@@ -9,6 +9,7 @@ RUN go build -tags age -o /out/umodel-server ./cmd/umodel-server
 FROM gcr.io/distroless/base-debian12
 WORKDIR /app
 COPY --from=build /out/umodel-server /usr/local/bin/umodel-server
+COPY examples ./examples
 EXPOSE 8080
 ENTRYPOINT ["umodel-server"]
 CMD ["--addr", ":8080", "--data", "/data", "--graphstore", "file.memory"]
