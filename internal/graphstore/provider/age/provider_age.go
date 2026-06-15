@@ -17,8 +17,14 @@ import (
 	"github.com/alibaba/UnifiedModel/internal/graphstore"
 	"github.com/alibaba/UnifiedModel/pkg/contract"
 	"github.com/alibaba/UnifiedModel/pkg/model"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+// maxGraphFetch bounds how many entities/edges are pulled when building an
+// in-memory graph for controlled Cypher. Kept independent of the public
+// MaxLimit capability so tightening the latter does not starve graph traversal.
+const maxGraphFetch = 1000
 
 // Provider implements contract.GraphStore using PostgreSQL AGE extension.
 type Provider struct {
@@ -93,6 +99,10 @@ func (p *Provider) DiscoverWorkspaces(ctx context.Context) ([]string, error) {
 			poolConfig.ConnConfig.RuntimeParams = make(map[string]string)
 		}
 		poolConfig.ConnConfig.RuntimeParams["search_path"] = "public,ag_catalog"
+		// AGE's cypher() function is not compatible with the extended/prepared
+		// query protocol; concurrent calls otherwise fail with
+		// "unhandled cypher(cstring) function call". Force simple protocol.
+		poolConfig.ConnConfig.DefaultQueryExecMode = pgx.QueryExecModeSimpleProtocol
 
 		tempPool, err := pgxpool.NewWithConfig(ctx, poolConfig)
 		if err != nil {
@@ -144,6 +154,10 @@ func (p *Provider) openWorkspaceLocked(ctx context.Context, workspace model.Work
 			currentPath = "public"
 		}
 		poolConfig.ConnConfig.RuntimeParams["search_path"] = currentPath + ",ag_catalog"
+		// AGE's cypher() function is not compatible with the extended/prepared
+		// query protocol; concurrent calls otherwise fail with
+		// "unhandled cypher(cstring) function call". Force simple protocol.
+		poolConfig.ConnConfig.DefaultQueryExecMode = pgx.QueryExecModeSimpleProtocol
 
 		pool, err := pgxpool.NewWithConfig(ctx, poolConfig)
 		if err != nil {
@@ -489,7 +503,7 @@ func (p *Provider) queryControlledCypher(ctx context.Context, handle *workspaceH
 func (p *Provider) cypherGraph(ctx context.Context, handle *workspaceHandle, plan model.TopoQueryPlan) (cypher.Graph, error) {
 	entityQuery := fmt.Sprintf(
 		`SELECT * FROM ag_catalog.cypher('%s', $$ MATCH (e:entity) WHERE e.deleted = false RETURN e LIMIT %d $$) AS (v agtype)`,
-		pgEscape(handle.graphName), ageCapabilities().MaxLimit)
+		pgEscape(handle.graphName), maxGraphFetch)
 
 	entityRows, err := p.cypherQuery(ctx, entityQuery)
 	if err != nil {
@@ -512,7 +526,7 @@ func (p *Provider) cypherGraph(ctx context.Context, handle *workspaceHandle, pla
 
 	relationQuery := fmt.Sprintf(
 		`SELECT * FROM ag_catalog.cypher('%s', $$ MATCH (s:entity)-[r:topo]->(d:entity) WHERE r.deleted = false RETURN s, r, d LIMIT %d $$) AS (src agtype, edge agtype, dest agtype)`,
-		pgEscape(handle.graphName), ageCapabilities().MaxLimit)
+		pgEscape(handle.graphName), maxGraphFetch)
 
 	relationRows, err := p.cypherQuery(ctx, relationQuery)
 	if err != nil {
@@ -836,22 +850,28 @@ func extractProperties(val any) map[string]any {
 }
 
 // entityPayloadFromAgtype extracts entity payload from an agtype vertex.
+//
+// At write time the complete entity payload (all flattened business fields plus
+// the unified __domain__/__entity_type__/... fields) is JSON-marshaled into the
+// vertex "properties" column. Reading it back and unpacking that nested map
+// reproduces exactly the payload the Memory provider stores, so the serialized
+// rows expose the same flattened header set instead of the raw storage columns
+// (domain/entity_type/entity_id/properties).
 func entityPayloadFromAgtype(val any) model.EntityPayload {
 	props := extractProperties(val)
 	payload := model.EntityPayload{}
-	for k, v := range props {
+
+	// Prefer the full original payload from the nested "properties" JSON.
+	for k, v := range nestedPayload(props["properties"]) {
 		payload[k] = v
 	}
-	// Map internal fields if they exist at top level (for recovery or direct AGE queries)
-	if payload["__domain__"] == nil && props["domain"] != nil {
-		payload["__domain__"] = props["domain"]
-	}
-	if payload["__entity_type__"] == nil && props["entity_type"] != nil {
-		payload["__entity_type__"] = props["entity_type"]
-	}
-	if payload["__entity_id__"] == nil && props["entity_id"] != nil {
-		payload["__entity_id__"] = props["entity_id"]
-	}
+
+	// Fallback: map raw storage columns to unified fields when the nested
+	// payload is absent (e.g. nodes created directly in AGE / recovery).
+	setIfNil(payload, "__domain__", props["domain"])
+	setIfNil(payload, "__entity_type__", props["entity_type"])
+	setIfNil(payload, "__entity_id__", props["entity_id"])
+
 	// Ensure required fields have defaults
 	if payload["__method__"] == nil {
 		payload["__method__"] = "Update"
@@ -863,34 +883,35 @@ func entityPayloadFromAgtype(val any) model.EntityPayload {
 }
 
 // relationPayloadFromAgtype extracts relation payload from agtype src, edge, dest.
+//
+// Like entities, the full original relation payload (flattened fields plus the
+// unified __relation_type__/__src_*__/__dest_*__ fields) is stored as JSON in
+// the edge "properties" column. Unpacking it reproduces the Memory provider's
+// flattened row shape.
 func relationPayloadFromAgtype(srcVal, edgeVal, destVal any) model.RelationPayload {
-	srcProps := extractProperties(srcVal)
 	edgeProps := extractProperties(edgeVal)
-	destProps := extractProperties(destVal)
 
 	payload := model.RelationPayload{}
-	for k, v := range edgeProps {
+	// Prefer the full original payload from the nested "properties" JSON.
+	for k, v := range nestedPayload(edgeProps["properties"]) {
 		payload[k] = v
 	}
 
-	// Set endpoint info
-	srcKey := asString(srcProps["entity_key"])
-	destKey := asString(destProps["entity_key"])
-	payload["src"] = srcKey
-	payload["dest"] = destKey
-	payload["__src_domain__"] = srcProps["__domain__"]
-	payload["__src_entity_type__"] = srcProps["__entity_type__"]
-	payload["__src_entity_id__"] = srcProps["__entity_id__"]
-	payload["__dest_domain__"] = destProps["__domain__"]
-	payload["__dest_entity_type__"] = destProps["__entity_type__"]
-	payload["__dest_entity_id__"] = destProps["__entity_id__"]
+	// Fallback: resolve endpoint identity from the vertices when the nested
+	// payload does not already carry it (e.g. edges created directly in AGE).
+	if payload["__src_domain__"] == nil || payload["__dest_domain__"] == nil {
+		srcPayload := entityPayloadFromAgtype(srcVal)
+		destPayload := entityPayloadFromAgtype(destVal)
+		setIfNil(payload, "__src_domain__", srcPayload["__domain__"])
+		setIfNil(payload, "__src_entity_type__", srcPayload["__entity_type__"])
+		setIfNil(payload, "__src_entity_id__", srcPayload["__entity_id__"])
+		setIfNil(payload, "__dest_domain__", destPayload["__domain__"])
+		setIfNil(payload, "__dest_entity_type__", destPayload["__entity_type__"])
+		setIfNil(payload, "__dest_entity_id__", destPayload["__entity_id__"])
+	}
 
-	if payload["__relation_type__"] == nil && edgeProps["relation_type"] != nil {
-		payload["__relation_type__"] = edgeProps["relation_type"]
-	}
-	if payload["__relation_key__"] == nil && edgeProps["relation_key"] != nil {
-		payload["__relation_key__"] = edgeProps["relation_key"]
-	}
+	setIfNil(payload, "__relation_type__", edgeProps["relation_type"])
+	setIfNil(payload, "__relation_key__", edgeProps["relation_key"])
 	if payload["__method__"] == nil {
 		payload["__method__"] = "Update"
 	}
@@ -898,6 +919,35 @@ func relationPayloadFromAgtype(srcVal, edgeVal, destVal any) model.RelationPaylo
 		payload["__deleted__"] = false
 	}
 	return payload
+}
+
+// nestedPayload decodes the JSON payload stored in a vertex/edge "properties"
+// column. AGE may return it already parsed into a map, or as a raw JSON string.
+func nestedPayload(val any) map[string]any {
+	switch v := val.(type) {
+	case map[string]any:
+		return v
+	case string:
+		if v == "" {
+			return nil
+		}
+		var m map[string]any
+		if err := json.Unmarshal([]byte(v), &m); err == nil {
+			return m
+		}
+	}
+	return nil
+}
+
+// setIfNil sets key to value only when the key is currently absent/nil and the
+// provided value is non-nil.
+func setIfNil(payload map[string]any, key string, value any) {
+	if value == nil {
+		return
+	}
+	if payload[key] == nil {
+		payload[key] = value
+	}
 }
 
 // Helper functions
@@ -1229,7 +1279,7 @@ func ageCapabilities() model.GraphStoreCapabilities {
 		TimeVisibility:     true,
 		ServerSideFilter:   true,
 		MaxDepth:           10,
-		MaxLimit:           1000,
+		MaxLimit:           100,
 		Timeout:            "60s",
 	}
 }
