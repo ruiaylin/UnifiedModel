@@ -34,6 +34,18 @@ func (s *MemoryStore) OpenWorkspace(ctx context.Context, workspace model.Workspa
 	return nil
 }
 
+func (s *MemoryStore) DiscoverWorkspaces(ctx context.Context) ([]string, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	ids := make([]string, 0, len(s.umodels))
+	for id := range s.umodels {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	return ids, nil
+}
+
 func (s *MemoryStore) EnsureSchema(ctx context.Context, workspace string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()

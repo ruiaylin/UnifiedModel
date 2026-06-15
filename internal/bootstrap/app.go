@@ -1,6 +1,7 @@
 package bootstrap
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -82,6 +83,26 @@ func NewAppWithGraphStore(dataRoot string, config graphstore.ProviderConfig) (*A
 	if err != nil {
 		return nil, fmt.Errorf("create graphstore provider: %w", err)
 	}
+
+	// Discover and recover workspaces from graphstore if supported
+	if providerType == graphstore.ProviderTypePostgresAge || providerType == graphstore.ProviderTypeLadybug {
+		ctx := context.Background()
+		if ids, err := graph.DiscoverWorkspaces(ctx); err == nil {
+			for _, id := range ids {
+				if _, err := workspaceSvc.GetWorkspace(ctx, id); err != nil {
+					// Auto-create metadata for discovered graph spaces
+					fmt.Fprintf(os.Stderr, "Recovering workspace metadata for discovered graph space: %s\n", id)
+					if _, err := workspaceSvc.CreateWorkspace(ctx, model.CreateWorkspaceRequest{
+						ID:   id,
+						Name: id,
+					}); err != nil {
+						fmt.Fprintf(os.Stderr, "Warning: failed to recover workspace %s: %v\n", id, err)
+					}
+				}
+			}
+		}
+	}
+
 	searchProvider, err := search.NewProvider(search.ProviderConfig{Type: search.ProviderTypeMemory, DataRoot: dataRoot})
 	if err != nil {
 		return nil, fmt.Errorf("create search provider: %w", err)
