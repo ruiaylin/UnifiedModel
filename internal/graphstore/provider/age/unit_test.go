@@ -516,10 +516,19 @@ func TestRelationPayloadFlattening(t *testing.T) {
 	if payload["__relation_type__"] != "runs_on" {
 		t.Errorf("expected __relation_type__=runs_on, got %v", payload["__relation_type__"])
 	}
+	// relation_key is internal AGE edge storage metadata and must not leak into
+	// the flattened payload: surfacing it adds an extra .topo header column that
+	// the Memory provider does not have, breaking contract parity.
+	if _, ok := payload["__relation_key__"]; ok {
+		t.Errorf("did not expect __relation_key__ in flattened payload, got %v", payload["__relation_key__"])
+	}
 
 	row := relationRow(payload)
 	if row["src"] != "infra/host/h1" || row["dest"] != "infra/svc/s1" {
 		t.Errorf("expected built src/dest, got src=%v dest=%v", row["src"], row["dest"])
+	}
+	if _, ok := row["__relation_key__"]; ok {
+		t.Errorf("did not expect __relation_key__ in topo row, got %v", row["__relation_key__"])
 	}
 }
 

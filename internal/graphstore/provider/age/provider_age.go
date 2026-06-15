@@ -938,7 +938,10 @@ func relationPayloadFromAgtype(srcVal, edgeVal, destVal any) model.RelationPaylo
 	}
 
 	setIfNil(payload, "__relation_type__", edgeProps["relation_type"])
-	setIfNil(payload, "__relation_key__", edgeProps["relation_key"])
+	// NOTE: relation_key is internal AGE edge storage metadata and is NOT part of
+	// the public .topo row contract. The Memory provider does not surface it, so
+	// injecting __relation_key__ here would add an 18th header column absent on the
+	// Memory side. Keep the flattened payload aligned with Memory; do not add it.
 	if payload["__method__"] == nil {
 		payload["__method__"] = "Update"
 	}
