@@ -9,7 +9,7 @@ import (
 	"github.com/alibaba/UnifiedModel/pkg/model"
 )
 
-const defaultLimit = 100
+const defaultLimit = 100000
 
 func Parse(req model.QueryRequest) (model.QueryPlan, error) {
 	ast, err := ParseAST(req.Query)

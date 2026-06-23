@@ -24,7 +24,7 @@ import (
 // maxGraphFetch bounds how many entities/edges are pulled when building an
 // in-memory graph for controlled Cypher. Kept independent of the public
 // MaxLimit capability so tightening the latter does not starve graph traversal.
-const maxGraphFetch = 1000
+const maxGraphFetch = 100000
 
 // Provider implements contract.GraphStore using PostgreSQL AGE extension.
 type Provider struct {
@@ -1294,8 +1294,8 @@ func boundedLimit(limit int) int {
 	if limit <= 0 {
 		return 100
 	}
-	if limit > 1000 {
-		return 1000
+	if limit > 100000 {
+		return 100000
 	}
 	return limit
 }
@@ -1309,7 +1309,7 @@ func ageCapabilities() model.GraphStoreCapabilities {
 		TimeVisibility:     true,
 		ServerSideFilter:   true,
 		MaxDepth:           10,
-		MaxLimit:           100,
+		MaxLimit:           100000,
 		Timeout:            "60s",
 	}
 }
