@@ -897,7 +897,7 @@ func ladybugCapabilities() model.GraphStoreCapabilities {
 		TimeVisibility:     true,
 		ServerSideFilter:   false,
 		MaxDepth:           10,
-		MaxLimit:           1000,
+		MaxLimit:           100000,
 		Timeout:            "60s",
 	}
 }

@@ -256,7 +256,7 @@ func (s *MemoryStore) Capabilities(ctx context.Context) (model.GraphStoreCapabil
 		TimeVisibility:     true,
 		ServerSideFilter:   false,
 		MaxDepth:           2,
-		MaxLimit:           100,
+		MaxLimit:           100000,
 		Timeout:            "10s",
 	}, nil
 }
