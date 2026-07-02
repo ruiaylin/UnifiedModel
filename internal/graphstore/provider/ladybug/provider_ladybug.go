@@ -228,7 +228,7 @@ func (p *Provider) WriteRelations(ctx context.Context, batch model.RelationWrite
 		if err := ensureEntityNode(conn, entityStmt, dest); err != nil {
 			return model.WriteResult{}, err
 		}
-		properties, _ := json.Marshal(payload)
+		properties, _ := json.Marshal(withoutKeys(payload, relationSystemKeys))
 		key := graphstore.RelationKey(payload)
 		res, err := conn.Execute(relationStmt, map[string]any{
 			"src_key":             graphstore.EntityKey(src),
@@ -440,8 +440,45 @@ func defaultSystemConfig() lbug.SystemConfig {
 	return config
 }
 
+// entitySystemKeys are the entity fields that have their own column on the
+// entity table. They must not also be serialized into the properties JSON,
+// or the column value and the JSON value can drift out of sync over time.
+var entitySystemKeys = []string{
+	"__domain__",
+	"__entity_type__",
+	"__entity_id__",
+	"__method__",
+	"__first_observed_time__",
+	"__last_observed_time__",
+	"__keep_alive_seconds__",
+	"__deleted__",
+}
+
+// relationSystemKeys are the relation fields that have their own column on
+// the topo table. Endpoint fields (__src_*__/__dest_*__) have no dedicated
+// column and must stay in properties so they can be reconstructed on read.
+var relationSystemKeys = []string{
+	"__relation_type__",
+	"__method__",
+	"__first_observed_time__",
+	"__last_observed_time__",
+	"__keep_alive_seconds__",
+	"__deleted__",
+}
+
+func withoutKeys(payload map[string]any, keys []string) map[string]any {
+	trimmed := make(map[string]any, len(payload))
+	for k, v := range payload {
+		trimmed[k] = v
+	}
+	for _, k := range keys {
+		delete(trimmed, k)
+	}
+	return trimmed
+}
+
 func executeEntityUpsert(conn *lbug.Connection, stmt *lbug.PreparedStatement, payload model.EntityPayload) error {
-	properties, _ := json.Marshal(payload)
+	properties, _ := json.Marshal(withoutKeys(payload, entitySystemKeys))
 	res, err := conn.Execute(stmt, map[string]any{
 		"entity_key":          graphstore.EntityKey(payload),
 		"domain":              asString(payload["__domain__"]),
@@ -504,6 +541,10 @@ func entityLabels(payload model.EntityPayload) []string {
 	return labels
 }
 
+// entityPayloadFromRow reads both new-format rows (properties JSON has no
+// system keys) and old-format rows (properties JSON still has them, from
+// before entitySystemKeys was trimmed at write time): the column values set
+// below always take precedence over whatever the JSON unmarshal produced.
 func entityPayloadFromRow(row map[string]any) model.EntityPayload {
 	payload := model.EntityPayload{}
 	_ = json.Unmarshal([]byte(asString(row["properties"])), &payload)
@@ -518,6 +559,9 @@ func entityPayloadFromRow(row map[string]any) model.EntityPayload {
 	return payload
 }
 
+// relationPayloadFromRow reads both new-format and old-format rows for the
+// same reason as entityPayloadFromRow: relationSystemKeys columns always win
+// over the JSON value, whether or not the JSON still carries those keys.
 func relationPayloadFromRow(row map[string]any) model.RelationPayload {
 	payload := model.RelationPayload{}
 	_ = json.Unmarshal([]byte(asString(row["properties"])), &payload)
