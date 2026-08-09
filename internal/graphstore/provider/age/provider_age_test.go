@@ -112,10 +112,10 @@ func TestProviderWriteAndQueryEntities(t *testing.T) {
 		Workspace: ws.ID,
 		Entities: []model.EntityPayload{
 			{
-				"__domain__":             "infra",
-				"__entity_type__":        "host",
-				"__entity_id__":          "host-001",
-				"__method__":             "Update",
+				"__domain__":              "infra",
+				"__entity_type__":         "host",
+				"__entity_id__":           "host-001",
+				"__method__":              "Update",
 				"__first_observed_time__": time.Now().Unix(),
 				"__last_observed_time__":  time.Now().Unix(),
 				"__keep_alive_seconds__":  3600,
