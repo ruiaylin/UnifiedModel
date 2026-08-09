@@ -1,0 +1,31 @@
+language: en
+engine: multica
+workspace: 7ed172b9-c3a8-4146-a688-e05e4935de62
+project: 076e352a-0c99-4b35-95fa-2c5a36dced7d
+roles:
+  planner: Spec Analyst
+  orchestrator: DevPipeline Orchestrator
+  workers:
+  - Backend Dev
+  - Frontend Dev
+  - Test Engineer
+  reviewers:
+  - Code Reviewer
+  - Studio Server Reviewer
+  acceptor: Studio Server Reviewer
+defaults:
+  max_parallel: 4
+  poll_interval: 30
+  coverage_gate: 90
+workflow:
+  human_in_loop: true
+  review: true
+  acceptance_doc: true
+  goal_required: false
+retry:
+  worker: 3
+  ci: 3
+  review: 3
+  merge: 3
+acceptance:
+  max_rounds: 3
