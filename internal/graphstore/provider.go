@@ -8,10 +8,11 @@ import (
 )
 
 const (
-	ProviderTypeMemory     = "memory"
-	ProviderTypeFileMemory = "file.memory"
-	ProviderTypeLadybug    = "local.ladybug"
-	DefaultProviderType    = ProviderTypeLadybug
+	ProviderTypeMemory      = "memory"
+	ProviderTypeFileMemory  = "file.memory"
+	ProviderTypeLadybug     = "local.ladybug"
+	ProviderTypePostgresAge = "postgres.age"
+	DefaultProviderType     = ProviderTypeLadybug
 )
 
 type ProviderConfig struct {

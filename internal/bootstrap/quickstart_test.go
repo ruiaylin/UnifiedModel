@@ -90,6 +90,34 @@ func assertSearchResult(t *testing.T, result model.QueryResult, mode string) {
 	}
 }
 
+func TestLoadQuickStartBackfillsLabelOnRecoveredWorkspace(t *testing.T) {
+	ctx := context.Background()
+	app := NewMemoryApp(t.TempDir())
+
+	// Simulate a graphstore-recovered workspace: it already exists with bare
+	// metadata (no quickstart label), exactly like the postgres.age/ladybug
+	// startup recovery path that auto-creates metadata for discovered graph
+	// spaces before LoadQuickStart runs.
+	if _, err := app.Workspace.CreateWorkspace(ctx, model.CreateWorkspaceRequest{
+		ID:   DefaultQuickStartWorkspaceID,
+		Name: DefaultQuickStartWorkspaceName,
+	}); err != nil {
+		t.Fatalf("seed recovered workspace: %v", err)
+	}
+
+	if _, err := app.LoadQuickStart(ctx, QuickStartOptions{}); err != nil {
+		t.Fatalf("load quickstart: %v", err)
+	}
+
+	workspace, err := app.Workspace.GetWorkspace(ctx, DefaultQuickStartWorkspaceID)
+	if err != nil {
+		t.Fatalf("get quickstart workspace: %v", err)
+	}
+	if workspace.Labels["umodel.io/quickstart"] != "true" {
+		t.Fatalf("expected quickstart label backfilled on recovered workspace, got %+v", workspace.Labels)
+	}
+}
+
 func TestLoadQuickStartIsSafeWithExistingWorkspace(t *testing.T) {
 	ctx := context.Background()
 	root := t.TempDir()

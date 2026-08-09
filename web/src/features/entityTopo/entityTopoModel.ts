@@ -1,6 +1,6 @@
 import type { QueryResult, UModelElement } from '../../api/types'
 
-export const ENTITY_TOPO_LIMIT = 100
+export const ENTITY_TOPO_LIMIT = 100000
 export const ENTITY_PROPERTY_LIMIT = ENTITY_TOPO_LIMIT
 
 export type TopoLayoutAlgorithm = 'force' | 'grouped'

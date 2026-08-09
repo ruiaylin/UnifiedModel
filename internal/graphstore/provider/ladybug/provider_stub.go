@@ -27,6 +27,10 @@ func (p *Provider) OpenWorkspace(ctx context.Context, workspace model.WorkspaceM
 	return unavailable()
 }
 
+func (p *Provider) DiscoverWorkspaces(ctx context.Context) ([]string, error) {
+	return nil, unavailable()
+}
+
 func (p *Provider) EnsureSchema(ctx context.Context, workspace string) error {
 	return unavailable()
 }
@@ -76,7 +80,7 @@ func ladybugCapabilities() model.GraphStoreCapabilities {
 		TimeVisibility:     true,
 		ServerSideFilter:   false,
 		MaxDepth:           10,
-		MaxLimit:           1000,
+		MaxLimit:           100000,
 		Timeout:            "60s",
 	}
 }

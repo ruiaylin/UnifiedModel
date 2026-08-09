@@ -54,6 +54,27 @@ func TestLadybugAppPersistsWorkspaceMetadata(t *testing.T) {
 	}
 }
 
+func TestWorkspaceMetadataPersistenceProviderSelection(t *testing.T) {
+	tests := []struct {
+		name         string
+		providerType string
+		want         bool
+	}{
+		{name: "memory", providerType: graphstore.ProviderTypeMemory, want: false},
+		{name: "file memory", providerType: graphstore.ProviderTypeFileMemory, want: true},
+		{name: "ladybug", providerType: graphstore.ProviderTypeLadybug, want: true},
+		{name: "postgres age", providerType: graphstore.ProviderTypePostgresAge, want: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := usesPersistentWorkspaceMetadata(tt.providerType); got != tt.want {
+				t.Fatalf("usesPersistentWorkspaceMetadata(%q) = %t, want %t", tt.providerType, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestLadybugAppRecoversWorkspaceMetadataFromDataRoot(t *testing.T) {
 	ctx := context.Background()
 	root := t.TempDir()

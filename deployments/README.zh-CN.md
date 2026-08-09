@@ -7,7 +7,7 @@ English version: [README.md](README.md)
 | 路径 | 作用 |
 |---|---|
 | `docker/Dockerfile` | 将 `umodel-server` 构建为小型运行时镜像。 |
-| `compose/docker-compose.yaml` | 使用持久化 Docker volume 运行服务。 |
+| `compose/docker-compose.yaml` | 使用持久化 Docker volume 运行 PG+AGE 后端和 Vite 前端。 |
 
 ## 默认 Provider
 
@@ -33,6 +33,13 @@ curl http://localhost:8080/healthz
 
 ## Docker Compose
 
+Compose 栈面向本地 PG+AGE 测试环境。先复制示例环境文件，再通过 shell、密钥管理器或未跟踪的 `deployments/compose/.env` 注入真实 `UMODEL_DSN`：
+
+```bash
+cp deployments/compose/.env.example deployments/compose/.env
+$EDITOR deployments/compose/.env
+```
+
 ```bash
 docker compose -f deployments/compose/docker-compose.yaml up --build
 docker compose -f deployments/compose/docker-compose.yaml down
@@ -48,16 +55,20 @@ docker compose -f deployments/compose/docker-compose.yaml down -v
 
 | 配置 | 默认值 | 说明 |
 |---|---|---|
-| API port | `8080` | `http://localhost:8080` |
+| API port | `8082` | `http://localhost:8082`，可用 `UMODEL_SERVER_PORT` 覆盖。 |
+| Web UI port | `5174` | `http://localhost:5174`，可用 `UMODEL_WEB_PORT` 覆盖。 |
 | Data directory | `/data` | Compose 中挂载到 `umodel-data` volume。 |
-| GraphStore provider | `file.memory` | JSON snapshot 位于 `/data/graphstore/file-memory/`。 |
+| GraphStore provider | `postgres.age` | 可用 `UMODEL_GRAPHSTORE` 覆盖；PG+AGE 需要 `UMODEL_DSN`。 |
+| Graph prefix | `ws_` | 可用 `UMODEL_GRAPH_PREFIX` 覆盖。 |
+
+持久化 provider（包括 `postgres.age`）的 workspace metadata 会写入 `/data/workspaces.json`。
 
 ## 导入 Demo
 
 ```bash
-go run ./cmd/umctl --addr http://localhost:8080 workspace create demo '{"name":"Demo"}'
-curl -X POST http://localhost:8080/api/v1/samples/demo/multi-domain-quickstart:import \
+go run ./cmd/umctl --addr http://localhost:8082 workspace create demo '{"name":"Demo"}'
+curl -X POST http://localhost:8082/api/v1/samples/demo/multi-domain-quickstart:import \
   -H 'Content-Type: application/json' \
   -d '{}'
-go run ./cmd/umctl --addr http://localhost:8080 query run demo ".umodel | limit 5"
+go run ./cmd/umctl --addr http://localhost:8082 query run demo ".umodel | limit 5"
 ```

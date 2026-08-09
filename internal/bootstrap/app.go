@@ -1,6 +1,7 @@
 package bootstrap
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -14,6 +15,7 @@ import (
 	"github.com/alibaba/UnifiedModel/internal/agentgateway"
 	"github.com/alibaba/UnifiedModel/internal/entitystore"
 	"github.com/alibaba/UnifiedModel/internal/graphstore"
+	_ "github.com/alibaba/UnifiedModel/internal/graphstore/provider/age"
 	_ "github.com/alibaba/UnifiedModel/internal/graphstore/provider/ladybug"
 	"github.com/alibaba/UnifiedModel/internal/query"
 	"github.com/alibaba/UnifiedModel/internal/sampledata"
@@ -70,7 +72,7 @@ func NewAppWithGraphStore(dataRoot string, config graphstore.ProviderConfig) (*A
 		config.Type = providerType
 	}
 	workspaceSvc := workspace.NewService(dataRoot, nil)
-	if providerType == graphstore.ProviderTypeFileMemory || providerType == graphstore.ProviderTypeLadybug {
+	if usesPersistentWorkspaceMetadata(providerType) {
 		var err error
 		workspaceSvc, err = workspace.NewPersistentServiceForProvider(dataRoot, nil, providerType)
 		if err != nil {
@@ -81,6 +83,26 @@ func NewAppWithGraphStore(dataRoot string, config graphstore.ProviderConfig) (*A
 	if err != nil {
 		return nil, fmt.Errorf("create graphstore provider: %w", err)
 	}
+
+	// Discover and recover workspaces from graphstore if supported
+	if providerType == graphstore.ProviderTypePostgresAge || providerType == graphstore.ProviderTypeLadybug {
+		ctx := context.Background()
+		if ids, err := graph.DiscoverWorkspaces(ctx); err == nil {
+			for _, id := range ids {
+				if _, err := workspaceSvc.GetWorkspace(ctx, id); err != nil {
+					// Auto-create metadata for discovered graph spaces
+					fmt.Fprintf(os.Stderr, "Recovering workspace metadata for discovered graph space: %s\n", id)
+					if _, err := workspaceSvc.CreateWorkspace(ctx, model.CreateWorkspaceRequest{
+						ID:   id,
+						Name: id,
+					}); err != nil {
+						fmt.Fprintf(os.Stderr, "Warning: failed to recover workspace %s: %v\n", id, err)
+					}
+				}
+			}
+		}
+	}
+
 	searchProvider, err := search.NewProvider(search.ProviderConfig{Type: search.ProviderTypeMemory, DataRoot: dataRoot})
 	if err != nil {
 		return nil, fmt.Errorf("create search provider: %w", err)
@@ -102,6 +124,15 @@ func NewAppWithGraphStore(dataRoot string, config graphstore.ProviderConfig) (*A
 		Search:       searchSvc,
 		AgentGateway: agentSvc,
 	}, nil
+}
+
+func usesPersistentWorkspaceMetadata(providerType string) bool {
+	switch providerType {
+	case graphstore.ProviderTypeFileMemory, graphstore.ProviderTypeLadybug, graphstore.ProviderTypePostgresAge:
+		return true
+	default:
+		return false
+	}
 }
 
 func (a *App) Handler() http.Handler {
@@ -293,6 +324,10 @@ func (a *App) handleWorkspaces(w http.ResponseWriter, r *http.Request) {
 			writeError(w, err)
 			return
 		}
+		if err := a.GraphStore.OpenWorkspace(r.Context(), metadata); err != nil {
+			writeError(w, err)
+			return
+		}
 		writeJSON(w, http.StatusCreated, metadata)
 	case http.MethodGet:
 		page, err := a.Workspace.ListWorkspaces(r.Context(), model.WorkspaceListRequest{
@@ -325,6 +360,10 @@ func (a *App) handleWorkspace(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		metadata, err := a.Workspace.GetWorkspace(r.Context(), id)
 		if err != nil {
+			writeError(w, err)
+			return
+		}
+		if err := a.GraphStore.OpenWorkspace(r.Context(), metadata); err != nil {
 			writeError(w, err)
 			return
 		}

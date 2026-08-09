@@ -25,6 +25,7 @@ type WorkspaceConfigSchemaRegistry interface {
 
 type GraphStore interface {
 	OpenWorkspace(ctx context.Context, workspace model.WorkspaceMetadata) error
+	DiscoverWorkspaces(ctx context.Context) ([]string, error)
 	EnsureSchema(ctx context.Context, workspace string) error
 	PutUModelElements(ctx context.Context, batch model.UModelElementBatch) (model.WriteResult, error)
 	GetUModelSnapshot(ctx context.Context, req model.UModelSnapshotRequest) (model.UModelSnapshot, error)

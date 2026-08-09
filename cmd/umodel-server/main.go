@@ -5,6 +5,7 @@ import (
 	"flag"
 	"log"
 	"net/http"
+	"os"
 
 	"github.com/alibaba/UnifiedModel/internal/bootstrap"
 	"github.com/alibaba/UnifiedModel/internal/graphstore"
@@ -18,6 +19,8 @@ func main() {
 	quickStart := flag.Bool("quickstart", false, "Create a demo workspace and import bundled quickstart data before serving")
 	quickStartWorkspace := flag.String("quickstart-workspace", bootstrap.DefaultQuickStartWorkspaceID, "Workspace id used by --quickstart")
 	quickStartSample := flag.String("quickstart-sample", bootstrap.DefaultQuickStartSample, "Sample package imported by --quickstart")
+	dsn := flag.String("dsn", os.Getenv("UMODEL_DSN"), "Data Source Name for providers that require it (e.g. postgres.age). Defaults to UMODEL_DSN env var.")
+	graphPrefix := flag.String("graph-prefix", os.Getenv("UMODEL_GRAPH_PREFIX"), "Prefix for graph names (e.g. for postgres.age). Defaults to UMODEL_GRAPH_PREFIX env var.")
 	flag.Parse()
 
 	graphstoreExplicit := false
@@ -29,7 +32,19 @@ func main() {
 	*provider = resolveProviderForQuickStart(*provider, *quickStart, graphstoreExplicit)
 
 	ctx := context.Background()
-	app, err := bootstrap.NewAppWithGraphStore(*dataRoot, graphstore.ProviderConfig{Type: *provider, DataRoot: *dataRoot})
+	config := graphstore.ProviderConfig{
+		Type:     *provider,
+		DataRoot: *dataRoot,
+		Options:  make(map[string]string),
+	}
+	if *dsn != "" {
+		config.Options["dsn"] = *dsn
+	}
+	if *graphPrefix != "" {
+		config.Options["graph_prefix"] = *graphPrefix
+	}
+
+	app, err := bootstrap.NewAppWithGraphStore(*dataRoot, config)
 	if err != nil {
 		log.Fatal(err)
 	}
