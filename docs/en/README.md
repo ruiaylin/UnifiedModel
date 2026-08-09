@@ -45,6 +45,8 @@ Documentation root: [docs/README.md](../README.md)
 ## Architecture
 
 - [Architecture Overview](architecture/overview.md) - system view, layers, public contracts, and guardrails.
+- [Operations World Model Ontology](architecture/operations-world-model-ontology.md) - entities, relations, namespaces, and SPL examples for L1 topology, L2 monitoring, and L3 code graph.
+- [Operations World Model Foundation](architecture/operations-world-model-foundation.md) - boundaries across UModel, GitNexus, PG+AGE, DataLink, bridge building, and cross-repo federation.
 - [Runtime Flow](architecture/runtime-flow.md) - startup, import, write, query, agent, and persistence flows.
 - [Query And Agent Architecture](architecture/query-and-agent.md) - Query Service and AgentGateway boundaries.
 - [Extension Points](architecture/extension-points.md) - model packs, schemas, providers, query, API, SDK, and UI extensions.

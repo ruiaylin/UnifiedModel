@@ -1,0 +1,38 @@
+kind: entity_set
+schema:
+  url: "umodel.aliyun.com"
+  version: "v0.1.0"
+metadata:
+  name: "code.module"
+  domain: code
+  display_name:
+    en_us: "Code Module"
+    zh_cn: "代码模块"
+  description:
+    en_us: "A deployable module or package within a code repository."
+    zh_cn: "代码仓库中的可部署模块或包。"
+spec:
+  fields:
+    - name: id
+      type: string
+      display_name: { en_us: "ID", zh_cn: "ID" }
+    - name: display_name
+      type: string
+      display_name: { en_us: "Name", zh_cn: "名称" }
+    - name: repo_id
+      type: string
+      display_name: { en_us: "Repository ID", zh_cn: "所属仓库 ID" }
+    - name: module_type
+      type: string
+      display_name: { en_us: "Module Type", zh_cn: "模块类型" }
+    - name: owner
+      type: string
+      display_name: { en_us: "Owner", zh_cn: "负责人" }
+  primary_key_fields:
+    - id
+  id_generator: "id"
+  name_fields:
+    - display_name
+  ordered_fields: ["id", "display_name", "repo_id", "module_type", "owner"]
+  first_observed_time_field: "__first_observed_time__"
+  last_observed_time_field: "__last_observed_time__"

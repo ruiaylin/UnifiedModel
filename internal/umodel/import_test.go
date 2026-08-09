@@ -185,6 +185,42 @@ func TestImportRejectsInvalidSourcesWithStableErrors(t *testing.T) {
 	}
 }
 
+func TestCollectImportFilesSortsByKindPriority(t *testing.T) {
+	dir := t.TempDir()
+	// Write files in scrambled alphabetical order that does NOT match kind priority.
+	// Required: entity_set(0) → entity_set_link(1) → metric_set(2) → prometheus(3) → data_link(4) → storage_link(5)
+	kinds := []struct {
+		filename string
+		kind     string
+	}{
+		{"storage_link.yaml", "storage_link"},
+		{"data_link.yaml", "data_link"},
+		{"entity_set.yaml", "entity_set"},
+		{"prometheus.yaml", "prometheus"},
+		{"metric_set.yaml", "metric_set"},
+		{"entity_set_link.yaml", "entity_set_link"},
+	}
+	for _, k := range kinds {
+		writeFile(t, filepath.Join(dir, k.filename), "kind: "+k.kind+"\nmetadata:\n  name: test\n  domain: d\nspec: {}\n")
+	}
+
+	files, _, err := collectImportFiles(dir)
+	if err != nil {
+		t.Fatalf("collectImportFiles: %v", err)
+	}
+	if len(files) != 6 {
+		t.Fatalf("expected 6 files, got %d", len(files))
+	}
+
+	expectedOrder := []string{"entity_set", "entity_set_link", "metric_set", "prometheus", "data_link", "storage_link"}
+	for i, want := range expectedOrder {
+		got := peekFileKind(files[i])
+		if got != want {
+			t.Fatalf("file[%d] kind = %q, want %q (path: %s)", i, got, want, files[i])
+		}
+	}
+}
+
 func TestImportCommonSchemaPackHookIsExplicit(t *testing.T) {
 	svc := NewService(graphstore.NewMemoryStore())
 	_, err := svc.Import(context.Background(), "demo", model.UModelImportRequest{
